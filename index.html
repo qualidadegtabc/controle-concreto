@@ -624,10 +624,8 @@ function renderResumoConcretagem(d){
   }).join('');
   const tracos = agruparTracos(bts);
   const tracosHtml = tracos.map(g=>{
-    const lbl = `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · slump ${g.slump}±${g.tol!=null?g.tol:'?'} cm`:''}${g.desc?` · ${g.desc}`:''}`;
-    return `<div style="border-top:1px solid var(--line);padding:8px 0">
-      <div style="font-weight:600">${lbl}</div>
-      <div class="sub" style="margin-top:2px">${g.bt} betoneira(s) · ${g.vol.toFixed(1)} m³ · ${g.cp} CP</div></div>`;
+    const lbl = `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · ${g.slump}±${g.tol!=null?g.tol:'?'}`:''}${g.desc?` · ${g.desc}`:''}`;
+    return `<div style="border-top:1px solid var(--line);padding:8px 0"><div style="font-weight:600">${lbl}</div></div>`;
   }).join('');
   const assinaturaBloco = d.assinado
     ? `<div class="tcard"><b>Ciência do responsável da engenharia</b>
@@ -697,20 +695,16 @@ function exportarConcretagemPDF(){
   const totalCP=bts.reduce((s,b)=>s+((b.corpos_prova||[]).length),0);
   const volTotal=aceitas.reduce((s,b)=>s+(Number(b.volume)||0),0);
 
-  // ----- Traços (antes da tabela de betoneiras) -----
+  // ----- Traços (indicação dos traços, antes da tabela de betoneiras) -----
   const tracos = agruparTracos(bts);
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
   doc.text('Traços', 14, doc.lastAutoTable.finalY + 6);
   doc.autoTable({
-    head:[['Traço','Betoneiras','Volume (m³)','CPs']],
     body: tracos.map(g=>[
-      `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · slump ${g.slump}±${g.tol!=null?g.tol:'?'} cm`:''}${g.desc?` · ${g.desc}`:''}`,
-      String(g.bt), g.vol.toFixed(1), String(g.cp)
+      `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · ${g.slump}±${g.tol!=null?g.tol:'?'}`:''}${g.desc?` · ${g.desc}`:''}`
     ]),
     startY: doc.lastAutoTable.finalY + 9, theme:'grid',
-    styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',lineColor:[234,226,198],lineWidth:0.1,textColor:[14,14,14]},
-    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
-    columnStyles:{ 1:{halign:'center',cellWidth:24}, 2:{halign:'right',cellWidth:28}, 3:{halign:'center',cellWidth:18} },
+    styles:{font:'helvetica',fontSize:8.5,cellPadding:1.8,overflow:'linebreak',lineColor:[234,226,198],lineWidth:0.1,textColor:[14,14,14]},
     margin:{left:14,right:14}
   });
 
