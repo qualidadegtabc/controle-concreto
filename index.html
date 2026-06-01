@@ -107,6 +107,8 @@ const cache = { obras:[], elementos:[], concreteiras:[], motivos:[], pavsPorObra
 const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[], betoneiras:[], cur:null, concId:null, totalCP:0 };
 let tela = 'home';
 let userEmail = '';
+let perfilUsuario = null;
+const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretagem
 
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:6, cpModo:'preset', motivoId:null, obs:'' }; }
@@ -455,10 +457,30 @@ function voltar(){
 
 // ---------- INÍCIO ----------
 async function iniciarApp(){
+  screen.innerHTML = '<div class="estado" style="padding:48px 20px;text-align:center">Carregando…</div>';
+  // confere o crachá do usuário logado
+  try{
+    const { data:u } = await sb.auth.getUser();
+    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id).maybeSingle();
+    perfilUsuario = data ? data.perfil : null;
+  }catch(_){ perfilUsuario = null; }
+  if(!PERFIS_OK.includes(perfilUsuario)){ telaSemAcesso(); return; }
   screen.innerHTML = casca('Concretagem',{back:false});
   document.getElementById('body').innerHTML = '<div class="estado">Carregando dados…</div>';
   try{ await carregarCadastros(); verHome(); }
   catch(e){ erro(e); }
+}
+function telaSemAcesso(){
+  screen.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Sem acesso</div>
+      <div class="login-sub">Este app é da equipe de concretagem.</div>
+      <div class="login-card" style="text-align:center">
+        <div class="sub" style="margin-bottom:14px">O usuário <b>${userEmail}</b> não tem permissão de concretagem${perfilUsuario?` (perfil atual: ${perfilUsuario})`:''}.<br>Fale com a administradora.</div>
+        <button class="bigbtn" onclick="sair()">Sair</button>
+      </div>
+    </div>`;
 }
 (async function(){
   const { data } = await sb.auth.getSession();

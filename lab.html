@@ -82,6 +82,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const root = document.getElementById('root');
 let userEmail='';
 let abaAtual='programar';
+let perfilUsuario = null;
+const PERFIS_OK = ['admin','laboratorio']; // quem pode usar o app do laboratório
 
 // ---- helpers de data ----
 function addDiasISO(dataISO, dias){ const d=new Date(dataISO+'T00:00:00'); d.setDate(d.getDate()+(+dias)); return d.toISOString().slice(0,10); }
@@ -894,7 +896,25 @@ function exportarResultadosPDF(){
 }
 
 // ---- INÍCIO ----
-function iniciar(){ render(); }
+async function iniciar(){
+  root.innerHTML = '<div class="estado">Carregando…</div>';
+  try{
+    const { data:u } = await sb.auth.getUser();
+    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id).maybeSingle();
+    perfilUsuario = data ? data.perfil : null;
+  }catch(_){ perfilUsuario = null; }
+  if(!PERFIS_OK.includes(perfilUsuario)){ telaSemAcesso(); return; }
+  render();
+}
+function telaSemAcesso(){
+  root.innerHTML = `
+    <div class="login-wrap"><div class="login-box" style="text-align:center">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Sem acesso</div>
+      <div class="login-sub" style="margin-bottom:18px">O usuário ${userEmail} não tem permissão para o Laboratório${perfilUsuario?` (perfil atual: ${perfilUsuario})`:''}.<br>Fale com a administradora.</div>
+      <button class="btn" onclick="sair()">Sair</button>
+    </div></div>`;
+}
 (async function(){
   const { data } = await sb.auth.getSession();
   if(data.session){ userEmail=data.session.user.email; iniciar(); }
