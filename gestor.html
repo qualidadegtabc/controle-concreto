@@ -195,7 +195,7 @@ async function carregarObras(){
   const wrap=document.getElementById('wrap');
   wrap.innerHTML='<div class="estado">Carregando obras…</div>';
   try{
-    const { data, error } = await sb.from('obras').select('id,nome').eq('ativo',true).order('nome');
+    const { data, error } = await sb.from('obras').select('id,nome').order('nome');
     if(error) throw error;
     OBRAS=data||[];
     if(!OBRAS.length){ wrap.innerHTML='<div class="estado">Nenhuma obra cadastrada.</div>'; return; }
