@@ -1,119 +1,245 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Controle Tecnológico de Concreto</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controle Tecnológico de Concreto</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#BD5D27">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFBEE; --card:#FFFEF8; --ink:#0E0E0E; --muted:#7A746A;
+  --line:#EAE2C6; --accent:#BD5D27; --accent-ink:#8E4319; --accent-soft:#F7E7D7;
+  --ok:#3F945A; --warn:#FAA21B; --bad:#B02A20;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Montserrat",sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+.mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
 
-  <!-- identidade do app (PWA) -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#BD5D27">
-  <link rel="apple-touch-icon" href="icon-192.png">
+/* layout celular em tela cheia (no app instalado não há moldura) */
+.screen{min-height:100vh;display:flex;flex-direction:column;background:var(--paper)}
+.appbar{background:#fff;border-bottom:1px solid var(--line);padding:14px 16px;
+  display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10;
+  padding-top:calc(14px + env(safe-area-inset-top))}
+.appbar .logo{font-weight:800;border:2px solid var(--ink);border-radius:7px;padding:3px 8px;font-size:12px;letter-spacing:.4px}
+.appbar .ttl{font-weight:700;font-size:16px;line-height:1.1}
+.appbar .co{font-size:10.5px;color:var(--muted);font-weight:600}
+.appbar .back{color:var(--accent);font-size:26px;line-height:1;font-weight:700;background:none;border:0;padding:0 4px 0 0}
+.appbar .net{margin-left:auto;font-size:11px;display:flex;align-items:center;gap:6px;color:var(--muted)}
+.netdot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.netdot.off{background:var(--warn)}
 
-  <style>
-    :root{
-      --paper:#FFFBEE; --ink:#0E0E0E; --accent:#BD5D27; --amber:#FAA21B;
-      --muted:#7A746A; --line:#ECEAE3; --soft:#F7E7D7;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--paper);
-         color:var(--ink);min-height:100vh}
-    header{background:var(--ink);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:12px;
-           position:sticky;top:0;z-index:10}
-    header .logo{font-weight:800;border:2px solid #fff;border-radius:8px;padding:4px 9px;font-size:14px;letter-spacing:.5px}
-    header .tit{font-size:15px;font-weight:600;line-height:1.2}
-    header .sub{font-size:11px;color:#cfc9bd;font-weight:400}
-    main{padding:18px;max-width:560px;margin:0 auto}
-    h2{font-size:15px;color:var(--accent);margin:4px 0 12px;font-weight:700}
-    .voltar{background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;
-            padding:0;margin-bottom:10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
-    .item{display:flex;align-items:center;justify-content:space-between;
-          background:#fff;border:1px solid var(--line);border-radius:12px;
-          padding:15px 16px;margin-bottom:10px;cursor:pointer;
-          font-size:15px;font-weight:600;transition:transform .05s}
-    .item:active{transform:scale(.99)}
-    .item .seta{color:var(--accent);font-size:18px}
-    .item.pav{font-weight:500;font-size:14px;cursor:default}
-    .item.pav .seta{display:none}
-    .estado{text-align:center;color:var(--muted);padding:40px 20px;font-size:14px;line-height:1.5}
-    .erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;
-          padding:14px;font-size:13px;line-height:1.5;margin-top:10px}
-    .badge{font-size:12px;color:var(--muted);font-weight:500}
-  </style>
+.pbody{padding:18px;overflow-y:auto;flex:1;max-width:560px;margin:0 auto;width:100%}
+.pfoot{padding:14px 16px;border-top:1px solid var(--line);background:#fff;
+  display:flex;flex-direction:column;gap:10px;max-width:560px;margin:0 auto;width:100%;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+
+label.fld{display:block;font-size:13.5px;font-weight:700;color:#2a2a27;margin:0 0 6px}
+.row{margin-bottom:15px}
+input,select{width:100%;font-size:17px;font-weight:500;padding:14px;border:1.5px solid var(--line);
+  border-radius:12px;background:#fff;color:var(--ink);min-height:54px}
+select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23BD5D27' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
+.three{display:flex;gap:10px}.three .row{flex:1}
+
+.homebtn{width:100%;display:flex;align-items:center;gap:14px;text-align:left;background:#fff;
+  border:1.5px solid var(--line);border-radius:14px;padding:18px;margin-bottom:13px}
+.homebtn.primary{background:var(--accent);border-color:var(--accent)}
+.homebtn.primary b,.homebtn.primary small{color:#fff}
+.homebtn .hi{width:46px;height:46px;flex:0 0 46px;display:flex;align-items:center;justify-content:center;
+  background:var(--accent-soft);color:var(--accent-ink);border-radius:11px;font-size:24px;font-weight:700}
+.homebtn.primary .hi{background:rgba(255,255,255,.2);color:#fff}
+.homebtn b{font-size:16px;display:block}
+.homebtn small{font-size:13px;color:var(--muted);display:block;margin-top:2px}
+
+.bigbtn{width:100%;padding:17px;border-radius:13px;border:0;background:var(--accent);color:#fff;
+  font-weight:700;font-size:17px;min-height:58px}
+.bigbtn.ghost{background:#fff;color:var(--accent-ink);border:2px solid var(--accent);font-size:15px;padding:13px;min-height:auto}
+
+.tcard{border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:13px 14px;margin-bottom:10px;position:relative}
+.tcard .x{position:absolute;top:8px;right:12px;color:var(--bad);background:none;border:0;font-size:20px;line-height:1}
+.hello{font-weight:700;font-size:20px;margin:6px 0 4px}
+.sub{font-size:13px;color:var(--muted)}
+.fldlabel{font-size:13.5px;font-weight:700;color:#2a2a27;margin:18px 0 8px}
+.estado{text-align:center;color:var(--muted);padding:40px 20px;font-size:14px;line-height:1.5}
+.erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;padding:14px;font-size:13px;line-height:1.5;margin:10px 0}
+
+/* lista de sugestões (datalist nativo cobre, mas deixamos o input livre) */
+</style>
 </head>
 <body>
-  <header>
+<div class="screen">
+  <div class="appbar">
+    <button class="back" id="back" style="display:none" onclick="voltar()">‹</button>
     <div class="logo">GT&amp;ABC</div>
     <div>
-      <div class="tit">Controle de Concreto</div>
-      <div class="sub" id="sub">Selecione uma obra</div>
+      <div class="ttl" id="titulo">Concretagem</div>
+      <div class="co" id="coSub">Controle Tecnológico de Concreto</div>
     </div>
-  </header>
+    <div class="net"><span class="netdot" id="netdot"></span><span id="netlabel">online</span></div>
+  </div>
+  <div class="pbody" id="body"><div class="estado">Carregando…</div></div>
+  <div class="pfoot" id="foot" style="display:none"></div>
+</div>
 
-  <main id="app">
-    <div class="estado">Carregando obras…</div>
-  </main>
+<!-- listas de sugestões (preenchidas do banco) -->
+<datalist id="dl_fck"></datalist>
+<datalist id="dl_slump"></datalist>
+<datalist id="dl_tol"></datalist>
+<datalist id="dl_desc"></datalist>
 
-  <script>
-    // ---- conexão ----
-    const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
-    const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
+<script>
+const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
 
-    const app = document.getElementById('app');
-    const sub = document.getElementById('sub');
+const body  = document.getElementById('body');
+const foot  = document.getElementById('foot');
+const back  = document.getElementById('back');
+const titulo= document.getElementById('titulo');
 
-    // helper: chama a API REST do Supabase
-    async function api(caminho){
-      const r = await fetch(SUPABASE_URL + "/rest/v1/" + caminho, {
-        headers: { apikey: ANON_KEY, Authorization: "Bearer " + ANON_KEY }
-      });
-      if(!r.ok){ throw new Error("HTTP " + r.status + " — " + await r.text()); }
-      return r.json();
-    }
+// ---- estado em memória ----
+const cache = { obras:[], elementos:[], concreteiras:[], pavsPorObra:{} };
+const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null,
+                elementoId:null, concreteiraId:null, tracos:[] };
+let tela = 'home'; // home | abrir
 
-    function erro(e){
-      app.innerHTML = '<div class="erro"><b>Não consegui carregar.</b><br>' +
-        'Detalhe técnico: ' + (e && e.message ? e.message : e) + '</div>';
-    }
+// ---- API ----
+async function api(caminho){
+  const r = await fetch(SUPABASE_URL + "/rest/v1/" + caminho, {
+    headers:{ apikey:ANON_KEY, Authorization:"Bearer "+ANON_KEY }
+  });
+  if(!r.ok) throw new Error("HTTP "+r.status+" — "+await r.text());
+  return r.json();
+}
+function erro(e){ body.innerHTML = '<div class="erro"><b>Não consegui carregar.</b><br>'+
+  (e&&e.message?e.message:e)+'</div>'; foot.style.display='none'; }
 
-    // ---- tela 1: lista de obras ----
-    async function verObras(){
-      sub.textContent = "Selecione uma obra";
-      app.innerHTML = '<div class="estado">Carregando obras…</div>';
-      try{
-        const obras = await api("obras?ativa=eq.true&order=nome");
-        if(!obras.length){ app.innerHTML = '<div class="estado">Nenhuma obra cadastrada.</div>'; return; }
-        let html = '<h2>Obras</h2>';
-        obras.forEach(o=>{
-          html += '<div class="item" onclick="verPavimentos('+o.id+', \''+o.nome.replace(/'/g,"\\'")+'\')">'
-                + '<span>'+o.nome+'</span><span class="seta">›</span></div>';
-        });
-        app.innerHTML = html;
-      }catch(e){ erro(e); }
-    }
+// ---- carga inicial dos cadastros ----
+async function carregarCadastros(){
+  const [obras, elementos, concreteiras, fck, slump, tol, desc] = await Promise.all([
+    api("obras?ativa=eq.true&order=nome"),
+    api("elementos?ativo=eq.true&order=ordem"),
+    api("concreteiras?ativa=eq.true&order=nome"),
+    api("opcoes_fck?ativo=eq.true&order=ordem"),
+    api("opcoes_slump?ativo=eq.true&order=ordem"),
+    api("opcoes_tolerancia?ativo=eq.true&order=ordem"),
+    api("opcoes_descricao?ativo=eq.true&order=ordem"),
+  ]);
+  cache.obras=obras; cache.elementos=elementos; cache.concreteiras=concreteiras;
+  document.getElementById('dl_fck').innerHTML  = fck.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_slump').innerHTML= slump.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_tol').innerHTML  = tol.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_desc').innerHTML = desc.map(x=>`<option value="${x.nome.replace(/"/g,'&quot;')}">`).join('');
+}
+async function pavimentosDe(obraId){
+  if(cache.pavsPorObra[obraId]) return cache.pavsPorObra[obraId];
+  const p = await api("pavimentos?obra_id=eq."+obraId+"&order=ordem.desc");
+  cache.pavsPorObra[obraId]=p; return p;
+}
 
-    // ---- tela 2: pavimentos de uma obra ----
-    async function verPavimentos(obraId, obraNome){
-      sub.textContent = obraNome;
-      app.innerHTML = '<div class="estado">Carregando pavimentos…</div>';
-      try{
-        const pavs = await api("pavimentos?obra_id=eq."+obraId+"&order=ordem.desc");
-        let html = '<button class="voltar" onclick="verObras()">‹ voltar para obras</button>';
-        html += '<h2>'+obraNome+' <span class="badge">· '+pavs.length+' pavimentos</span></h2>';
-        pavs.forEach(p=>{
-          html += '<div class="item pav"><span>'+p.nome+'</span></div>';
-        });
-        app.innerHTML = html;
-      }catch(e){ erro(e); }
-    }
+// ---- HOME ----
+function verHome(){
+  tela='home'; titulo.textContent='Concretagem'; back.style.display='none'; foot.style.display='none';
+  body.innerHTML = `
+    <div class="hello">Olá!</div>
+    <div class="sub" style="margin-bottom:20px">O que vamos fazer?</div>
+    <button class="homebtn primary" onclick="abrirConcretagem()"><span class="hi">+</span><span><b>Nova concretagem</b><small>registrar uma concretagem no canteiro</small></span></button>
+    <button class="homebtn" onclick="aviso('Concretagens concluídas')"><span class="hi">✓</span><span><b>Concretagens concluídas</b><small>em breve</small></span></button>
+    <button class="homebtn" onclick="aviso('Pendentes de assinatura')"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>em breve</small></span></button>`;
+}
+function aviso(o){ alert(o+' — esta tela ainda será construída.'); }
 
-    // inicia
-    verObras();
+// ---- ABRIR CONCRETAGEM ----
+async function abrirConcretagem(){
+  tela='abrir'; titulo.textContent='Nova concretagem'; back.style.display='';
+  // defaults
+  if(!draft.obraId && cache.obras.length){ draft.obraId=cache.obras[0].id; draft.obraNome=cache.obras[0].nome; }
+  if(!draft.elementoId && cache.elementos.length){ draft.elementoId=cache.elementos[0].id; }
+  if(!draft.concreteiraId && cache.concreteiras.length){ draft.concreteiraId=cache.concreteiras[0].id; }
+  if(!draft.tracos.length) draft.tracos.push({fck:'',slump:'16',tol:'3',desc:''});
+  await desenharAbrir();
+}
+async function desenharAbrir(){
+  const pavs = await pavimentosDe(draft.obraId);
+  if(!draft.pavId && pavs.length){ draft.pavId=pavs[0].id; draft.pavNome=pavs[0].nome; }
 
-    // service worker (offline)
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', ()=>navigator.serviceWorker.register('service-worker.js'));
-    }
-  </script>
+  const obrasOpt = cache.obras.map(o=>`<option value="${o.id}" ${o.id===draft.obraId?'selected':''}>${o.nome}</option>`).join('');
+  const pavsOpt  = pavs.map(p=>`<option value="${p.id}" ${p.id===draft.pavId?'selected':''}>${p.nome}</option>`).join('');
+  const elemOpt  = cache.elementos.map(e=>`<option value="${e.id}" ${e.id===draft.elementoId?'selected':''}>${e.nome}</option>`).join('');
+  const concOpt  = cache.concreteiras.map(c=>`<option value="${c.id}" ${c.id===draft.concreteiraId?'selected':''}>${c.nome}</option>`).join('');
+
+  let html = `
+    <div class="row"><label class="fld">Obra</label>
+      <select onchange="mudarObra(this.value)">${obrasOpt}</select></div>
+    <div class="row"><label class="fld">Pavimento</label>
+      <select onchange="setPav(this.value)">${pavsOpt}</select></div>
+    <div class="row"><label class="fld">Elemento concretado</label>
+      <select onchange="draft.elementoId=+this.value">${elemOpt}</select></div>
+    <div class="row"><label class="fld">Concreteira</label>
+      <select onchange="draft.concreteiraId=+this.value">${concOpt}</select></div>
+
+    <div class="fldlabel">Traços desta concretagem</div>`;
+
+  draft.tracos.forEach((t,i)=>{
+    html += `<div class="tcard">${draft.tracos.length>1?`<button class="x" onclick="rmTraco(${i})">✕</button>`:''}
+      <div class="three">
+        <div class="row" style="margin-bottom:10px"><label class="fld">Fck</label>
+          <input list="dl_fck" inputmode="decimal" value="${t.fck}" placeholder="—" onchange="draft.tracos[${i}].fck=this.value"></div>
+        <div class="row" style="margin-bottom:10px"><label class="fld">Slump</label>
+          <input list="dl_slump" inputmode="decimal" value="${t.slump}" onchange="draft.tracos[${i}].slump=this.value"></div>
+        <div class="row" style="margin-bottom:10px"><label class="fld">±</label>
+          <input list="dl_tol" inputmode="decimal" value="${t.tol}" onchange="draft.tracos[${i}].tol=this.value"></div>
+      </div>
+      <div class="row" style="margin-bottom:0"><label class="fld">Descrição</label>
+        <input list="dl_desc" value="${t.desc||''}" placeholder="opcional" onchange="draft.tracos[${i}].desc=this.value"></div>
+    </div>`;
+  });
+  html += `<button class="bigbtn ghost" onclick="addTraco()">+ adicionar traço</button>`;
+  body.innerHTML = html;
+
+  foot.style.display='';
+  foot.innerHTML = `<button class="bigbtn" onclick="iniciar()">Iniciar ▸</button>`;
+}
+async function mudarObra(v){ draft.obraId=+v; const o=cache.obras.find(x=>x.id===+v); draft.obraNome=o?o.nome:null; draft.pavId=null; draft.pavNome=null; await desenharAbrir(); }
+function setPav(v){ draft.pavId=+v; const p=(cache.pavsPorObra[draft.obraId]||[]).find(x=>x.id===+v); draft.pavNome=p?p.nome:null; }
+function addTraco(){ draft.tracos.push({fck:'',slump:'16',tol:'3',desc:''}); desenharAbrir(); }
+function rmTraco(i){ draft.tracos.splice(i,1); desenharAbrir(); }
+function iniciar(){
+  if(!draft.tracos.some(t=>String(t.fck).trim())){ alert('Informe o Fck de ao menos um traço.'); return; }
+  const resumo = `Obra: ${draft.obraNome}\nPavimento: ${draft.pavNome}\n`+
+    `Elemento: ${(cache.elementos.find(e=>e.id===draft.elementoId)||{}).nome}\n`+
+    `Concreteira: ${(cache.concreteiras.find(c=>c.id===draft.concreteiraId)||{}).nome}\n`+
+    `Traços: ${draft.tracos.map(t=>'Fck '+t.fck+' / slump '+t.slump+'±'+t.tol+(t.desc?' / '+t.desc:'')).join('  |  ')}`;
+  alert('✓ Concretagem montada!\n\n'+resumo+'\n\n(A próxima tela — lançar betoneiras — será construída no próximo passo.)');
+}
+
+// ---- navegação ----
+function voltar(){ if(tela==='abrir') verHome(); }
+
+// ---- rede / status ----
+function atualizaRede(){
+  const on = navigator.onLine;
+  document.getElementById('netdot').className = 'netdot'+(on?'':' off');
+  document.getElementById('netlabel').textContent = on?'online':'offline';
+}
+window.addEventListener('online', atualizaRede);
+window.addEventListener('offline', atualizaRede);
+
+// ---- início ----
+(async function(){
+  atualizaRede();
+  try{ await carregarCadastros(); verHome(); }
+  catch(e){ erro(e); }
+})();
+
+// service worker (offline)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('service-worker.js'));
+}
+</script>
 </body>
 </html>
