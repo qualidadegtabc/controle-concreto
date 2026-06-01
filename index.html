@@ -115,6 +115,17 @@ const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretage
 
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
+// hora 24h com ":" automático (não precisa digitar o separador); padrão = hora do sistema
+function mascararHora(el){
+  let v = el.value.replace(/[^0-9]/g,'').slice(0,4);
+  if(v.length>=3){
+    let hh=v.slice(0,2), mm=v.slice(2);
+    if(+hh>23) hh='23';
+    if(mm.length===2 && +mm>59) mm='59';
+    el.value = hh+':'+mm;
+  } else { el.value = v; }
+  if(draft && draft.cur) draft.cur.hora = el.value;
+}
 let assinaturaCtx = null; // { concId, titulo, origem }
 let detalheOrigem = 'concluidas';
 let detalheAtual = null;
@@ -286,7 +297,7 @@ function desenharBetoneira(){
       <div class="row" style="flex:1"><label class="fld">Lacre</label><input value="${cur.lacre}" inputmode="numeric" onchange="draft.cur.lacre=this.value" placeholder="—"></div>
     </div>
     <div class="two" style="display:flex;gap:10px">
-      <div class="row" style="flex:1"><label class="fld">Chegada</label><input type="time" value="${cur.hora}" onchange="draft.cur.hora=this.value"></div>
+      <div class="row" style="flex:1"><label class="fld">Chegada</label><input value="${cur.hora}" inputmode="numeric" maxlength="5" placeholder="hh:mm" oninput="mascararHora(this)" onchange="draft.cur.hora=this.value"></div>
       <div class="row" style="flex:1"><label class="fld">Slump medido</label><input value="${cur.slump}" inputmode="decimal" onchange="draft.cur.slump=this.value" placeholder="cm"></div>
     </div>
     <div class="two" style="display:flex;gap:10px">
