@@ -773,13 +773,16 @@ function desenharResultados(){
 
   if(!lista.length){ wrap.innerHTML=html+'<div class="estado">Nenhum resultado para os filtros selecionados.</div>'; return; }
 
-  html += `<div class="card" style="padding:0;overflow-x:auto">
-    <table style="min-width:1500px;font-size:13px"><thead><tr>
-      <th style="width:78px">CP</th><th>Obra</th><th>Pav</th><th>Elemento</th><th>Concreteira</th>
-      <th style="width:70px">NF</th><th style="width:70px">Lacre</th><th style="width:55px">Fck</th>
-      <th style="width:60px">Slump</th><th style="width:55px">Água</th><th style="width:55px">Vol</th>
-      <th style="width:95px">Moldagem</th><th style="width:50px">Idade</th><th style="width:95px">Rompim.</th>
-      <th style="width:75px">Result.</th><th style="width:95px">Conf.</th><th style="width:120px">Obs</th>
+  html += `<div style="width:100vw;margin-left:calc(50% - 50vw);padding:0 26px;box-sizing:border-box">
+    <div class="card" style="padding:0;overflow:hidden">
+    <table style="width:100%;font-size:13px"><thead><tr>
+      <th style="width:80px">CP</th><th>Obra</th><th>Pav</th><th>Elemento</th><th>Concreteira</th>
+      <th>NF</th><th>Lacre</th><th>Fck <span style="font-weight:400;text-transform:none">(MPa)</span></th>
+      <th>Slump <span style="font-weight:400;text-transform:none">(cm)</span></th>
+      <th>Água <span style="font-weight:400;text-transform:none">(L)</span></th>
+      <th>Vol <span style="font-weight:400;text-transform:none">(m³)</span></th>
+      <th>Moldagem</th><th>Idade</th><th>Rompim.</th>
+      <th>Result. <span style="font-weight:400;text-transform:none">(MPa)</span></th><th>Conf.</th><th>Obs</th>
     </tr></thead><tbody>`;
   lista.forEach(l=>{
     const naoConf = l.conf==='nao';
@@ -796,7 +799,7 @@ function desenharResultados(){
       <td style="font-size:12px">${l.obs||'<span class="muted">—</span>'}</td>
     </tr>`;
   });
-  html += `</tbody></table></div>`;
+  html += `</tbody></table></div></div>`;
   wrap.innerHTML = html;
 }
 function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' }; desenharResultados(); }
