@@ -899,21 +899,26 @@ function exportarResultadosPDF(){
 // ---- INÍCIO ----
 async function iniciar(){
   root.innerHTML = '<div class="estado">Carregando…</div>';
+  let _erroCracha = '';
   try{
-    const { data:u } = await sb.auth.getUser();
-    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id);
-    perfisUsuario = (data||[]).map(r=>r.perfil);
-    nomeUsuario = (data && data[0] && data[0].nome) || '';
-  }catch(_){ perfisUsuario = []; }
-  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(); return; }
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session){ _erroCracha = 'Sessão não encontrada. Saia e entre novamente.'; }
+    else {
+      const { data, error } = await sb.rpc('meus_perfis');
+      if(error) _erroCracha = error.message;
+      else perfisUsuario = Array.isArray(data) ? data : [];
+    }
+  }catch(e){ _erroCracha = (e && e.message) ? e.message : String(e); }
+  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(_erroCracha); return; }
   render();
 }
-function telaSemAcesso(){
+function telaSemAcesso(msg){
   root.innerHTML = `
     <div class="login-wrap"><div class="login-box" style="text-align:center">
       <div class="login-logo">GT&amp;ABC</div>
       <div class="login-tit">Sem acesso</div>
-      <div class="login-sub" style="margin-bottom:18px">O usuário ${userEmail} não tem permissão para o Laboratório${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
+      <div class="login-sub" style="margin-bottom:14px">O usuário ${userEmail} não tem permissão para o Laboratório${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
+      ${msg?`<div class="login-sub" style="font-size:12px;color:#b02a20;margin-bottom:14px">detalhe técnico: ${msg}</div>`:''}
       <button class="btn" onclick="sair()">Sair</button>
     </div></div>`;
 }

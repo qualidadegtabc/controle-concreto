@@ -460,19 +460,23 @@ function voltar(){
 async function iniciarApp(){
   screen.innerHTML = '<div class="estado" style="padding:48px 20px;text-align:center">Carregando…</div>';
   // confere o crachá do usuário logado
+  let _erroCracha = '';
   try{
-    const { data:u } = await sb.auth.getUser();
-    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id);
-    perfisUsuario = (data||[]).map(r=>r.perfil);
-    nomeUsuario = (data && data[0] && data[0].nome) || '';
-  }catch(_){ perfisUsuario = []; }
-  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(); return; }
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session){ _erroCracha = 'Sessão não encontrada. Saia e entre novamente.'; }
+    else {
+      const { data, error } = await sb.rpc('meus_perfis');
+      if(error) _erroCracha = error.message;
+      else perfisUsuario = Array.isArray(data) ? data : [];
+    }
+  }catch(e){ _erroCracha = (e && e.message) ? e.message : String(e); }
+  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(_erroCracha); return; }
   screen.innerHTML = casca('Concretagem',{back:false});
   document.getElementById('body').innerHTML = '<div class="estado">Carregando dados…</div>';
   try{ await carregarCadastros(); verHome(); }
   catch(e){ erro(e); }
 }
-function telaSemAcesso(){
+function telaSemAcesso(msg){
   screen.innerHTML = `
     <div class="login-wrap">
       <div class="login-logo">GT&amp;ABC</div>
@@ -480,6 +484,7 @@ function telaSemAcesso(){
       <div class="login-sub">Este app é da equipe de concretagem.</div>
       <div class="login-card" style="text-align:center">
         <div class="sub" style="margin-bottom:14px">O usuário <b>${userEmail}</b> não tem permissão de concretagem${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
+        ${msg?`<div class="sub" style="font-size:12px;color:#b02a20;margin-bottom:14px">detalhe técnico: ${msg}</div>`:''}
         <button class="bigbtn" onclick="sair()">Sair</button>
       </div>
     </div>`;
