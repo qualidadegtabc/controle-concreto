@@ -123,58 +123,117 @@ function render(){
   else document.getElementById('wrap').innerHTML = `<div class="estado">Esta aba será construída em breve. 🔧</div>`;
 }
 
-// ---- PROGRAMAR IDADES ----
+// ---- PROGRAMAR IDADES (por traço, com padrão da 1ª betoneira) ----
 let progGrupos=[], progEscolhas={};
+// busca CPs sem idade, monta: concretagem -> traço(fck) -> betoneiras(NF) -> duplas
 async function buscarParaProgramar(){
   const { data, error } = await sb.from('corpos_prova')
-    .select('id,numero,idade_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagem_id,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome)))')
+    .select('id,numero,idade_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagem_id,criado_em,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome)))')
     .is('idade_prevista', null).eq('descartado', false).order('numero',{ascending:true});
   if(error) throw error;
-  const porBt={};
+
+  // 1) agrupa CPs por betoneira
+  const bts={};
   (data||[]).forEach(cp=>{
     const b=cp.betoneiras, c=b.concretagens;
-    if(!porBt[b.id]) porBt[b.id]={betoneiraId:b.id,nf:b.nota_fiscal,fck:b.fck,obra:c.obras.nome,pav:c.pavimentos.nome,data:c.data_concretagem,cps:[]};
-    porBt[b.id].cps.push({id:cp.id,numero:cp.numero});
+    if(!bts[b.id]) bts[b.id]={betoneiraId:b.id, nf:b.nota_fiscal, fck:b.fck, criado:b.criado_em,
+      concId:c.id, obra:c.obras.nome, pav:c.pavimentos.nome, data:c.data_concretagem, cps:[]};
+    bts[b.id].cps.push({id:cp.id, numero:cp.numero});
   });
-  const grupos=Object.values(porBt);
-  grupos.forEach(g=>{ g.cps.sort((a,b)=>a.numero-b.numero); g.duplas=[]; for(let i=0;i<g.cps.length;i+=2) g.duplas.push(g.cps.slice(i,i+2)); });
+  // forma duplas por betoneira (par na ordem; ímpar sobra 1)
+  Object.values(bts).forEach(b=>{ b.cps.sort((x,y)=>x.numero-y.numero); b.duplas=[]; for(let i=0;i<b.cps.length;i+=2) b.duplas.push(b.cps.slice(i,i+2)); b.nDuplas=b.duplas.length; });
+
+  // 2) agrupa betoneiras por (concretagem + fck = traço)
+  const tracos={};
+  Object.values(bts).forEach(b=>{
+    const chave = b.concId+'|'+b.fck;
+    if(!tracos[chave]) tracos[chave]={concId:b.concId, fck:b.fck, obra:b.obra, pav:b.pav, data:b.data, betoneiras:[]};
+    tracos[chave].betoneiras.push(b);
+  });
+
+  // 3) em cada traço: 1ª betoneira (mais antiga) define o padrão; separa avulsas (qtd de duplas diferente)
+  const grupos=Object.values(tracos).map(t=>{
+    t.betoneiras.sort((a,b)=> (a.criado<b.criado?-1:a.criado>b.criado?1:0));
+    const padraoN = t.betoneiras[0].nDuplas;
+    t.padraoN = padraoN;
+    t.noPadrao = t.betoneiras.filter(b=>b.nDuplas===padraoN);
+    t.avulsas  = t.betoneiras.filter(b=>b.nDuplas!==padraoN);
+    return t;
+  });
   grupos.sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:0);
   return grupos;
 }
 async function abaProgramar(){
   const wrap=document.getElementById('wrap');
-  wrap.innerHTML = `<div class="officehead"><h2>Programar idades</h2><p>Defina a idade de rompimento de cada dupla de corpos de prova. As duplas são formadas por nota fiscal.</p></div><div class="estado">Buscando corpos de prova…</div>`;
+  wrap.innerHTML = `<div class="officehead"><h2>Programar idades</h2><p>Defina o padrão de idades por traço. As demais notas fiscais do mesmo traço (com a mesma quantidade de duplas) herdam o padrão; as diferentes aparecem para programar à parte.</p></div><div class="estado">Buscando corpos de prova…</div>`;
   try{ progGrupos=await buscarParaProgramar(); progEscolhas={}; desenharProgramar(); }
   catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
+const IDADES=[3,4,7,28,63];
+function selIdade(chave){
+  const opts=IDADES.map(x=>`<option value="${x}" ${progEscolhas[chave]==x?'selected':''}>${x} dias</option>`).join('');
+  return `<select onchange="progEscolhas['${chave}']=+this.value;desenharProgramar()"><option value="" ${!progEscolhas[chave]?'selected':''} disabled>idade…</option>${opts}</select>`;
+}
 function desenharProgramar(){
   const wrap=document.getElementById('wrap');
-  let html=`<div class="officehead"><h2>Programar idades</h2><p>Defina a idade de rompimento de cada dupla. As duplas são formadas por nota fiscal.</p></div>`;
+  let html=`<div class="officehead"><h2>Programar idades</h2><p>Defina o padrão de idades por traço. NFs do mesmo traço com a mesma quantidade de duplas herdam o padrão; as diferentes ficam à parte.</p></div>`;
   if(!progGrupos.length){ wrap.innerHTML=html+'<div class="estado">Nenhum corpo de prova aguardando programação. 🎉</div>'; return; }
-  const idades=[3,4,7,28,63];
-  progGrupos.forEach(g=>{
-    html+=`<div class="card"><div class="ch">${g.obra} · ${g.pav}</div>
-      <div class="cs">NF ${g.nf} · Fck ${g.fck||'—'} · moldagem ${fmtData(g.data)}</div>
-      <table><thead><tr><th style="width:160px">Dupla (CP)</th><th style="width:200px">Idade</th><th>Data prevista</th></tr></thead><tbody>`;
-    g.duplas.forEach((d,di)=>{
-      const chave=g.betoneiraId+':'+di, nums=d.map(c=>c.numero).join(' e ');
-      const opts=idades.map(x=>`<option value="${x}" ${progEscolhas[chave]==x?'selected':''}>${x} dias</option>`).join('');
-      const prev = progEscolhas[chave]? fmtData(addDiasISO(g.data, progEscolhas[chave])) : '—';
-      html+=`<tr><td class="mono" style="font-weight:700">${nums}</td>
-        <td><select onchange="progEscolhas['${chave}']=+this.value;desenharProgramar()"><option value="" ${!progEscolhas[chave]?'selected':''} disabled>idade…</option>${opts}</select></td>
-        <td class="mono" id="prev_${chave.replace(':','_')}">${prev}</td></tr>`;
+
+  progGrupos.forEach((t,ti)=>{
+    // ----- bloco do TRAÇO (padrão) -----
+    const nfList = t.noPadrao.map(b=>'NF '+b.nf).join(', ');
+    html += `<div class="card"><div class="ch">${t.obra} · ${t.pav} — Traço Fck ${t.fck||'—'}</div>
+      <div class="cs">moldagem ${fmtData(t.data)} · padrão definido pela 1ª betoneira (${t.padraoN} dupla${t.padraoN>1?'s':''}) · aplica a: ${nfList}</div>
+      <table><thead><tr><th style="width:130px">Posição</th><th style="width:200px">Idade (padrão)</th><th>Data prevista</th></tr></thead><tbody>`;
+    for(let pos=0; pos<t.padraoN; pos++){
+      const chave='T'+ti+':'+pos;
+      const prev = progEscolhas[chave]? fmtData(addDiasISO(t.data, progEscolhas[chave])) : '—';
+      html += `<tr><td style="font-weight:700">${pos+1}ª dupla</td><td>${selIdade(chave)}</td><td class="mono">${prev}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+    // mostra quais CPs recebem (resumo)
+    const exemplo = t.noPadrao.map(b=>`NF ${b.nf}: ${b.duplas.map(d=>d.map(c=>c.numero).join('·')).join(' / ')}`).join(' &nbsp;|&nbsp; ');
+    html += `<div class="cs" style="margin-top:10px">Duplas: ${exemplo}</div></div>`;
+
+    // ----- blocos AVULSOS (qtd de duplas diferente do padrão) -----
+    t.avulsas.forEach(b=>{
+      html += `<div class="card" style="border-style:dashed"><div class="ch">${t.obra} · ${t.pav} — NF ${b.nf} <span class="chip">avulsa</span></div>
+        <div class="cs">Fck ${b.fck||'—'} · ${b.nDuplas} dupla(s) — quantidade diferente do padrão do traço, programe à parte</div>
+        <table><thead><tr><th style="width:160px">Dupla (CP)</th><th style="width:200px">Idade</th><th>Data prevista</th></tr></thead><tbody>`;
+      b.duplas.forEach((d,di)=>{
+        const chave='A'+b.betoneiraId+':'+di, nums=d.map(c=>c.numero).join(' e ');
+        const prev = progEscolhas[chave]? fmtData(addDiasISO(t.data, progEscolhas[chave])) : '—';
+        html += `<tr><td class="mono" style="font-weight:700">${nums}</td><td>${selIdade(chave)}</td><td class="mono">${prev}</td></tr>`;
+      });
+      html += `</tbody></table></div>`;
     });
-    html+=`</tbody></table></div>`;
   });
   html+=`<button class="btn" onclick="salvarProgramacao()">Salvar programação</button>`;
   wrap.innerHTML=html;
 }
 async function salvarProgramacao(){
   const updates=[];
-  progGrupos.forEach(g=>g.duplas.forEach((d,di)=>{
-    const idade=progEscolhas[g.betoneiraId+':'+di];
-    if(idade){ const dp=addDiasISO(g.data,idade); d.forEach(cp=>updates.push({id:cp.id,idade_prevista:idade,data_prevista:dp})); }
-  }));
+  progGrupos.forEach((t,ti)=>{
+    // padrão: cada posição -> aplica à dupla correspondente de cada NF no padrão
+    for(let pos=0; pos<t.padraoN; pos++){
+      const idade=progEscolhas['T'+ti+':'+pos];
+      if(!idade) continue;
+      const dp=addDiasISO(t.data, idade);
+      t.noPadrao.forEach(b=>{
+        const dupla=b.duplas[pos];
+        if(dupla) dupla.forEach(cp=>updates.push({id:cp.id, idade_prevista:idade, data_prevista:dp}));
+      });
+    }
+    // avulsas
+    t.avulsas.forEach(b=>{
+      b.duplas.forEach((d,di)=>{
+        const idade=progEscolhas['A'+b.betoneiraId+':'+di];
+        if(!idade) return;
+        const dp=addDiasISO(t.data, idade);
+        d.forEach(cp=>updates.push({id:cp.id, idade_prevista:idade, data_prevista:dp}));
+      });
+    });
+  });
   if(!updates.length){ alert('Escolha a idade de ao menos uma dupla.'); return; }
   try{
     const res=await Promise.all(updates.map(u=>sb.from('corpos_prova').update({idade_prevista:u.idade_prevista,data_prevista:u.data_prevista}).eq('id',u.id)));
