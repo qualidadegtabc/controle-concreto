@@ -84,6 +84,8 @@ let abaAtual='programar';
 // ---- helpers de data ----
 function addDiasISO(dataISO, dias){ const d=new Date(dataISO+'T00:00:00'); d.setDate(d.getDate()+(+dias)); return d.toISOString().slice(0,10); }
 function fmtData(iso){ if(!iso) return '—'; const[a,m,d]=iso.split('-'); return `${d}/${m}/${a}`; }
+// Supabase devolve relação 1:1 (ex.: o rompimento de um CP) como objeto único, não lista. Normaliza p/ array.
+function asArr(v){ return v==null ? [] : (Array.isArray(v) ? v : [v]); }
 
 // ---- LOGIN ----
 function telaLogin(msg){
@@ -269,6 +271,8 @@ let rompDatasDisp = [];      // datas previstas com CP a romper
 let rompidosDia = [];        // rompimentos já confirmados (exibição)
 let editRomp = {};           // edição de dupla rompida
 let rompIdade = {};          // (mantido por compat)
+let okBt28 = new Set();      // betoneiras cujo 28d já rompeu e ficou conforme (≥ fck)
+let dispensaveis = [];       // duplas de 63d liberadas para descarte
 
 function hojeISO(){ return new Date().toISOString().slice(0,10); }
 
@@ -280,7 +284,7 @@ async function buscarTodasPendentes(){
     .eq('descartado',false)
     .order('numero',{ascending:true});
   if(error) throw error;
-  const semRomp = (data||[]).filter(cp=> !cp.rompimentos || cp.rompimentos.length===0);
+  const semRomp = (data||[]).filter(cp=> asArr(cp.rompimentos).length===0);
   const grp={};
   semRomp.forEach(cp=>{
     const b=cp.betoneiras, c=b.concretagens;
@@ -330,11 +334,30 @@ async function buscarRompidosDia(dataISO){
 }
 
 let pendentesTodas = []; // cache de todas as duplas pendentes
+
+// betoneiras cujo rompimento de 28d (ou mais) já saiu E ficou conforme (resultado >= fck)
+async function buscarBetoneiras28Conforme(){
+  const { data, error } = await sb.from('rompimentos')
+    .select('resultado_mpa,prensa1_tf,idade_real,corpos_prova!inner(betoneira_id,betoneiras!inner(fck))')
+    .gte('idade_real', 28);
+  if(error) throw error;
+  const ok = new Set();
+  (data||[]).forEach(r=>{
+    const cp=r.corpos_prova; if(!cp||!cp.betoneiras) return;
+    const fck=cp.betoneiras.fck||0;
+    const mpa = r.resultado_mpa!=null ? Number(r.resultado_mpa) : (r.prensa1_tf!=null ? r.prensa1_tf*MPA_PER_TF : null);
+    if(mpa!=null && mpa>=fck) ok.add(cp.betoneira_id);
+  });
+  return ok;
+}
 async function abaRomper(){
   const wrap=document.getElementById('wrap');
   wrap.innerHTML = `<div class="officehead"><h2>Romper</h2><p>Lance as prensas (tf) de cada corpo de prova. O resultado em MPa e a conformidade são calculados automaticamente.</p></div><div class="estado">Buscando corpos de prova…</div>`;
   try{
     pendentesTodas = await buscarTodasPendentes();
+    okBt28 = await buscarBetoneiras28Conforme();
+    // CPs de 63d ainda pendentes cuja betoneira já tem 28d conforme → liberados para descarte
+    dispensaveis = pendentesTodas.filter(d=> d.idade===63 && okBt28.has(d.betoneiraId));
     // datas previstas disponíveis (com CP a romper), ordenadas
     rompDatasDisp = [...new Set(pendentesTodas.map(d=>d.prevista))].sort();
     // define filtro inicial: hoje se houver, senão a 1ª data disponível, senão atrasados
@@ -355,6 +378,7 @@ async function abaRomper(){
 // monta rompGrupos conforme o filtro de data
 function aplicarFiltroRomper(){
   const hoje=hojeISO();
+  const dispKeys = new Set(dispensaveis.map(d=>d.duplaKey));
   if(rompFiltroData==='ATRASADOS'){
     rompGrupos = pendentesTodas.filter(d=>d.prevista<hoje);
   } else if(rompFiltroData){
@@ -363,6 +387,8 @@ function aplicarFiltroRomper(){
   } else {
     rompGrupos = [];
   }
+  // tira os 63d liberados para descarte — eles aparecem só na faixa de descarte
+  rompGrupos = rompGrupos.filter(d=>!dispKeys.has(d.duplaKey));
 }
 async function trocarDataRomper(v){
   rompFiltroData = v;
@@ -443,6 +469,20 @@ function desenharRomper(){
         <select onchange="rompFiltroObra=this.value;desenharRomper()">${obras.map(o=>`<option ${o===rompFiltroObra?'selected':''}>${o}</option>`).join('')}</select></div>
       <div style="margin-left:auto;color:var(--muted);font-size:13px;align-self:center">${lista.length} dupla(s) a romper</div>
     </div>`;
+
+  // ----- FAIXA DE DESCARTE (63d liberados) -----
+  if(dispensaveis.length){
+    const nums = dispensaveis.flatMap(d=>d.cps.map(c=>c.numero)).sort((a,b)=>a-b)
+      .map(n=>`<span class="mono" style="background:#fff;border:1px solid #f0cda0;border-radius:7px;padding:3px 8px;font-weight:700">${n}</span>`).join(' ');
+    html += `<div style="background:#fdf3e3;border:1px solid #f0cda0;border-radius:12px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:700;color:var(--accent-ink);margin-bottom:8px">⚠ Liberados para descarte
+          <span style="font-weight:400;color:var(--muted)">— CPs de 63 dias cujo 28d já atingiu o fck</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${nums}</div>
+      </div>
+      <button class="btn" style="background:var(--warn);white-space:nowrap" onclick="descartarLiberados()">Marcar como descartados</button>
+    </div>`;
+  }
 
   // ----- TABELA A ROMPER -----
   if(!lista.length){
@@ -583,6 +623,22 @@ async function confirmarRompimentos(){
   }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
 }
 
+// marca os CPs de 63d liberados como descartados (grava no banco)
+async function descartarLiberados(){
+  if(!dispensaveis.length) return;
+  const ids  = dispensaveis.flatMap(d=>d.cps.map(c=>c.id));
+  const nums = dispensaveis.flatMap(d=>d.cps.map(c=>c.numero)).sort((a,b)=>a-b);
+  if(!confirm(`Marcar ${ids.length} corpo(s) de prova de 63 dias como descartados?\nCP: ${nums.join(', ')}\n\nEles saem da fila de rompimento e ficam registrados como descartados.`)) return;
+  try{
+    const { error } = await sb.from('corpos_prova').update({descartado:true}).in('id', ids);
+    if(error) throw error;
+    await abaRomper();
+    document.getElementById('wrap').insertAdjacentHTML('afterbegin',
+      `<div class="card" style="text-align:center;border-color:#bcd2bf;background:#f3f9f4"><div style="font-size:34px">✓</div>
+       <div style="font-weight:700;color:var(--ok)">${ids.length} corpo(s) de prova descartado(s).</div></div>`);
+  }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui descartar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
+}
+
 // ================= ABA RESULTADOS =================
 let resLinhas = [];   // uma linha por DUPLA
 let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' };
@@ -614,7 +670,7 @@ async function buscarResultados(){
       const par=cps.slice(i,i+2);
       // rompimentos da dupla (pega de qualquer CP do par)
       const romps=[];
-      par.forEach(cp=>(cp.rompimentos||[]).forEach(r=>romps.push(r)));
+      par.forEach(cp=>asArr(cp.rompimentos).forEach(r=>romps.push(r)));
       const temRomp=romps.length>0;
       // idade: do rompimento (real) se houver, senão a prevista
       const idade = temRomp ? romps[0].idade_real : (par[0].idade_prevista!=null?par[0].idade_prevista:null);
