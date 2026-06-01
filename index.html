@@ -96,6 +96,8 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 <datalist id="dl_desc"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script>
 const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
@@ -114,6 +116,8 @@ const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretage
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
 let assinaturaCtx = null; // { concId, titulo, origem }
+let detalheOrigem = 'concluidas';
+let detalheAtual = null;
 function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:6, cpModo:'preset', motivoId:null, obs:'' }; }
 
 // ---------- LOGIN ----------
@@ -282,7 +286,7 @@ function desenharBetoneira(){
       <div class="row" style="flex:1"><label class="fld">Lacre</label><input value="${cur.lacre}" inputmode="numeric" onchange="draft.cur.lacre=this.value" placeholder="—"></div>
     </div>
     <div class="two" style="display:flex;gap:10px">
-      <div class="row" style="flex:1"><label class="fld">Chegada</label><input value="${cur.hora}" onchange="draft.cur.hora=this.value" placeholder="hh:mm"></div>
+      <div class="row" style="flex:1"><label class="fld">Chegada</label><input type="time" value="${cur.hora}" onchange="draft.cur.hora=this.value"></div>
       <div class="row" style="flex:1"><label class="fld">Slump medido</label><input value="${cur.slump}" inputmode="decimal" onchange="draft.cur.slump=this.value" placeholder="cm"></div>
     </div>
     <div class="two" style="display:flex;gap:10px">
@@ -505,12 +509,14 @@ async function confirmarAssinatura(){
   }
 }
 function cancelarAssinatura(){
-  if(assinaturaCtx && assinaturaCtx.origem==='pendentes') verPendentes();
+  if(assinaturaCtx && assinaturaCtx.origem==='detalhe') telaResumoConcretagem(assinaturaCtx.concId, detalheOrigem);
   else verResumoFinal();
 }
 function telaAssinaturaOk(){
   tela='assinaturaOk';
-  const voltarFn = (assinaturaCtx && assinaturaCtx.origem==='pendentes') ? 'verPendentes()' : 'zerarEVoltar()';
+  const voltarFn = (assinaturaCtx && assinaturaCtx.origem==='detalhe')
+    ? `telaResumoConcretagem(${assinaturaCtx.concId},'${detalheOrigem}')`
+    : 'zerarEVoltar()';
   screen.innerHTML = casca('Assinatura coletada', {back:false});
   document.getElementById('body').innerHTML = `<div style="text-align:center;padding:24px 6px">
     <div style="font-size:46px">✓</div>
@@ -521,29 +527,29 @@ function telaAssinaturaOk(){
 }
 
 // ---------- CONCLUÍDAS / PENDENTES ----------
-async function buscarConcretagens(pendentesSo){
-  let q = sb.from('concretagens')
+// tipo: 'concluidas' (assinadas) | 'pendentes' (a assinar)
+async function buscarConcretagens(tipo){
+  const { data, error } = await sb.from('concretagens')
     .select('id,data_concretagem,assinado,assinante_nome,obras!inner(nome),pavimentos!inner(nome),betoneiras(volume,aceita)')
     .eq('finalizada', true)
+    .eq('assinado', tipo==='concluidas')
     .order('data_concretagem',{ascending:false});
-  if(pendentesSo) q = q.eq('assinado', false);
-  const { data, error } = await q;
   if(error) throw error;
   return data||[];
 }
-function cardConcretagem(m){
+function cardConcretagem(m, origem){
   const bts=m.betoneiras||[];
   const aceitas=bts.filter(b=>b.aceita).length;
   const recusas=bts.length-aceitas;
   const vol=bts.filter(b=>b.aceita).reduce((s,b)=>s+(Number(b.volume)||0),0);
-  const titulo=(m.obras.nome+' · '+m.pavimentos.nome).replace(/'/g,'');
   const status = m.assinado
     ? `<span style="display:inline-block;margin-top:10px;background:#eaf3ec;color:var(--ok);border:1px solid #bcd2bf;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700">assinada${m.assinante_nome?' · '+m.assinante_nome:''}</span>`
-    : `<button class="bigbtn" style="margin-top:11px;padding:12px;font-size:15px" onclick="telaAssinatura(${m.id},'${titulo}','pendentes')">Coletar assinatura</button>`;
-  return `<div class="tcard">
+    : `<span style="display:inline-block;margin-top:10px;background:#f3f0e7;color:var(--muted);border:1px solid #e2dcca;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700">assinatura pendente</span>`;
+  return `<div class="tcard" style="cursor:pointer" onclick="telaResumoConcretagem(${m.id},'${origem}')">
     <div style="font-weight:700">${m.obras.nome} · ${m.pavimentos.nome}</div>
     <div class="sub" style="margin-top:6px">${fmtData(m.data_concretagem)} · ${aceitas} betoneira(s)${recusas?' · '+recusas+' recusa(s)':''} · ${vol.toFixed(1)} m³</div>
     ${status}
+    <div style="margin-top:8px;color:var(--accent);font-size:12.5px;font-weight:700">ver resumo ›</div>
   </div>`;
 }
 async function verConcluidas(){
@@ -552,8 +558,8 @@ async function verConcluidas(){
   document.getElementById('foot').style.display='none';
   const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
   try{
-    const lista=await buscarConcretagens(false);
-    body.innerHTML = lista.length ? lista.map(cardConcretagem).join('') : '<div class="estado">Nenhuma concretagem concluída ainda.</div>';
+    const lista=await buscarConcretagens('concluidas');
+    body.innerHTML = lista.length ? lista.map(m=>cardConcretagem(m,'concluidas')).join('') : '<div class="estado">Nenhuma concretagem concluída (assinada) ainda.</div>';
   }catch(e){ erro(e); }
 }
 async function verPendentes(){
@@ -562,9 +568,144 @@ async function verPendentes(){
   document.getElementById('foot').style.display='none';
   const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
   try{
-    const lista=await buscarConcretagens(true);
-    body.innerHTML = lista.length ? lista.map(cardConcretagem).join('') : '<div class="estado">Nenhuma assinatura pendente. 🎉</div>';
+    const lista=await buscarConcretagens('pendentes');
+    body.innerHTML = lista.length ? lista.map(m=>cardConcretagem(m,'pendentes')).join('') : '<div class="estado">Nenhuma assinatura pendente. 🎉</div>';
   }catch(e){ erro(e); }
+}
+
+// ---------- RESUMO / DETALHE DE UMA CONCRETAGEM ----------
+async function buscarConcretagemDetalhe(concId){
+  const { data, error } = await sb.from('concretagens')
+    .select('id,data_concretagem,responsavel,assinado,assinante_nome,assinatura_img,assinado_em,obras!inner(nome),pavimentos!inner(nome),elementos(nome),concreteiras(nome),betoneiras(id,nota_fiscal,lacre,hora_chegada,fck,slump_medido,agua_adicionada,volume,aceita,observacao,motivos_recusa(nome),corpos_prova(numero))')
+    .eq('id', concId).single();
+  if(error) throw error;
+  return data;
+}
+async function telaResumoConcretagem(concId, origem){
+  detalheOrigem = origem || 'concluidas';
+  tela='detalhe';
+  screen.innerHTML = casca('Resumo da concretagem', {back:true});
+  document.getElementById('foot').style.display='none';
+  const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
+  try{
+    const d = await buscarConcretagemDetalhe(concId);
+    detalheAtual = d;
+    renderResumoConcretagem(d);
+  }catch(e){ erro(e); }
+}
+function renderResumoConcretagem(d){
+  const body=document.getElementById('body'), foot=document.getElementById('foot');
+  const bts=(d.betoneiras||[]).slice().sort((a,b)=>String(a.nota_fiscal).localeCompare(String(b.nota_fiscal),undefined,{numeric:true}));
+  const aceitas=bts.filter(b=>b.aceita), recusadas=bts.filter(b=>!b.aceita);
+  const totalCP=bts.reduce((s,b)=>s+((b.corpos_prova||[]).length),0);
+  const volTotal=aceitas.reduce((s,b)=>s+(Number(b.volume)||0),0);
+  const linhas = bts.map(b=>{
+    const cps=(b.corpos_prova||[]).map(c=>c.numero).sort((x,y)=>x-y);
+    const motivo = b.aceita ? '' : (b.motivos_recusa&&b.motivos_recusa.nome?` · motivo: ${b.motivos_recusa.nome}`:'');
+    return `<div style="border-top:1px solid var(--line);padding:9px 0">
+      <div style="font-weight:700">NF ${b.nota_fiscal} · ${b.aceita?'<span style="color:var(--ok)">aceita</span>':'<span style="color:var(--bad)">recusada</span>'}${motivo}</div>
+      <div class="sub" style="margin-top:3px">Fck ${b.fck||'—'} · slump ${b.slump_medido!=null?b.slump_medido:'—'} cm · água ${b.agua_adicionada!=null?b.agua_adicionada:'—'} L · ${Number(b.volume||0).toFixed(1)} m³ · chegada ${b.hora_chegada||'—'}${b.lacre?' · lacre '+b.lacre:''}</div>
+      ${b.aceita&&cps.length?`<div class="sub" style="margin-top:3px">CPs: ${cps.join(' · ')}</div>`:''}
+      ${b.observacao?`<div class="sub" style="margin-top:3px">Obs: ${b.observacao}</div>`:''}
+    </div>`;
+  }).join('');
+  const assinaturaBloco = d.assinado
+    ? `<div class="tcard"><b>Assinatura</b>
+        <div class="sub" style="margin-top:6px">Recebido por <b>${d.assinante_nome||'—'}</b>${d.assinado_em?` · ${fmtData(d.assinado_em)}`:''}</div>
+        ${d.assinatura_img?`<img src="${d.assinatura_img}" alt="assinatura" style="margin-top:8px;width:100%;max-width:280px;height:90px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:10px;display:block">`:''}
+      </div>`
+    : `<div class="tcard" style="border-style:dashed"><b>Assinatura pendente</b>
+        <div class="sub" style="margin-top:6px">Esta concretagem ainda não foi assinada.</div></div>`;
+  body.innerHTML = `
+    <div style="font-weight:700;font-size:18px">${d.obras.nome} · ${d.pavimentos.nome}</div>
+    <div class="sub" style="margin:4px 0 14px">${fmtData(d.data_concretagem)} · ${(d.elementos&&d.elementos.nome)||'—'} · ${(d.concreteiras&&d.concreteiras.nome)||'—'} · por ${d.responsavel||'—'}</div>
+    <div class="tcard"><b>Resumo</b>
+      <div class="sub" style="margin-top:6px;line-height:1.7">
+        Betoneiras: <b>${bts.length}</b> (${aceitas.length} aceita(s)${recusadas.length?', '+recusadas.length+' recusa(s)':''})<br>
+        Corpos de prova: <b>${totalCP}</b> · Volume aceito: <b>${volTotal.toFixed(1)} m³</b>
+      </div>
+      ${linhas}
+    </div>
+    ${assinaturaBloco}`;
+  foot.style.display='';
+  const btnSign = d.assinado ? '' : `<button class="bigbtn ghost" onclick="telaAssinatura(${d.id},'${(d.obras.nome+' · '+d.pavimentos.nome).replace(/'/g,'')}','detalhe')">Coletar assinatura</button>`;
+  foot.innerHTML = `<button class="bigbtn" onclick="exportarConcretagemPDF()">Exportar PDF</button>${btnSign}`;
+}
+
+// ---------- PDF DA CONCRETAGEM ----------
+function exportarConcretagemPDF(){
+  const d = detalheAtual;
+  if(!d) return;
+  if(!window.jspdf || !window.jspdf.jsPDF){ alert('A biblioteca de PDF não carregou. Verifique a conexão e recarregue a página.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const accent=[189,93,39], ink=[14,14,14], muted=[122,116,106];
+  const hoje=new Date();
+  const ger = String(hoje.getDate()).padStart(2,'0')+'/'+String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(ink[0],ink[1],ink[2]);
+  doc.text('GT&ABC · Controle Tecnológico de Concreto', 14, 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
+  doc.text('Relatório de Concretagem', 14, 22);
+  doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]);
+  doc.text('Gerado em '+ger, pageW-14, 16, {align:'right'});
+
+  const info = [
+    ['Obra', d.obras.nome], ['Pavimento', d.pavimentos.nome],
+    ['Elemento', (d.elementos&&d.elementos.nome)||'—'], ['Concreteira', (d.concreteiras&&d.concreteiras.nome)||'—'],
+    ['Data', fmtData(d.data_concretagem)], ['Responsável', d.responsavel||'—']
+  ];
+  doc.autoTable({
+    body: info.map(r=>[{content:r[0],styles:{fontStyle:'bold',cellWidth:36}}, r[1]]),
+    startY:28, theme:'plain',
+    styles:{font:'helvetica',fontSize:9,cellPadding:1.1,textColor:[14,14,14]}, margin:{left:14,right:14}
+  });
+
+  const bts=(d.betoneiras||[]).slice().sort((a,b)=>String(a.nota_fiscal).localeCompare(String(b.nota_fiscal),undefined,{numeric:true}));
+  const aceitas=bts.filter(b=>b.aceita), recusadas=bts.filter(b=>!b.aceita);
+  const totalCP=bts.reduce((s,b)=>s+((b.corpos_prova||[]).length),0);
+  const volTotal=aceitas.reduce((s,b)=>s+(Number(b.volume)||0),0);
+
+  const head=[['NF','Lacre','Hora','Fck','Slump (cm)','Água (L)','Vol (m³)','Aceite','Motivo','CPs']];
+  const linhasPdf=bts.map(b=>{
+    const cps=(b.corpos_prova||[]).map(c=>c.numero).sort((x,y)=>x-y).join(' ');
+    return [ String(b.nota_fiscal), b.lacre||'—', b.hora_chegada||'—', b.fck!=null?String(b.fck):'—',
+      b.slump_medido!=null?String(b.slump_medido):'—', b.agua_adicionada!=null?String(b.agua_adicionada):'—',
+      Number(b.volume||0).toFixed(1), b.aceita?'Aceita':'Recusada',
+      b.aceita?'—':((b.motivos_recusa&&b.motivos_recusa.nome)||'—'), b.aceita?(cps||'—'):'—' ];
+  });
+  doc.autoTable({
+    head, body:linhasPdf, startY: doc.lastAutoTable.finalY + 4, theme:'grid',
+    styles:{font:'helvetica',fontSize:7.5,cellPadding:1.5,overflow:'linebreak',lineColor:[234,226,198],lineWidth:0.1,textColor:[14,14,14]},
+    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
+    columnStyles:{ 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}, 6:{halign:'right'} },
+    didParseCell:(dt)=>{ if(dt.section==='body' && dt.column.index===7 && dt.cell.raw==='Recusada'){ dt.cell.styles.textColor=[176,42,32]; dt.cell.styles.fontStyle='bold'; } },
+    margin:{left:14,right:14}
+  });
+
+  let y = doc.lastAutoTable.finalY + 7;
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(ink[0],ink[1],ink[2]);
+  doc.text(`Total: ${bts.length} betoneira(s) · ${aceitas.length} aceita(s) · ${recusadas.length} recusa(s) · ${totalCP} CPs · ${volTotal.toFixed(1)} m³`, 14, y);
+
+  y += 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(muted[0],muted[1],muted[2]);
+  doc.text('Recebido por:', 14, y);
+  if(d.assinado){
+    doc.setTextColor(ink[0],ink[1],ink[2]); doc.setFont('helvetica','bold');
+    doc.text((d.assinante_nome||'—')+(d.assinado_em?`    ·    ${fmtData(d.assinado_em)}`:''), 42, y);
+    if(d.assinatura_img){ try{ doc.addImage(d.assinatura_img, 'PNG', 14, y+5, 80, 30); }catch(_){ } }
+    doc.setDrawColor(170); doc.line(14, y+37, 94, y+37);
+  } else {
+    doc.text('assinatura pendente', 42, y);
+  }
+
+  const ph=doc.internal.pageSize.getHeight();
+  doc.setFontSize(7); doc.setTextColor(muted[0],muted[1],muted[2]); doc.setFont('helvetica','normal');
+  doc.text('GT Home & ABC — Controle Tecnológico de Concreto', 14, ph-8);
+
+  const slug=(d.obras.nome+'_'+d.pavimentos.nome).replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  doc.save('concretagem_'+slug+'_'+fmtData(d.data_concretagem).replace(/\//g,'-')+'.pdf');
 }
 
 function zerarEVoltar(){
@@ -577,6 +718,7 @@ function voltar(){
   if(tela==='abrir') verHome();
   else if(tela==='betoneira'){ if(draft.betoneiras.length){ if(confirm('Voltar para os dados da concretagem? As betoneiras já gravadas continuam salvas.')) abrirConcretagem(); } else abrirConcretagem(); }
   else if(tela==='concluidas' || tela==='pendentes') verHome();
+  else if(tela==='detalhe'){ if(detalheOrigem==='pendentes') verPendentes(); else verConcluidas(); }
 }
 
 // ---------- INÍCIO ----------
