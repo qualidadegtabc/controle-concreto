@@ -75,6 +75,7 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
@@ -122,7 +123,7 @@ function casca(){
     <div class="topbar">
       <div class="logo">GT&amp;ABC</div>
       <div><div class="ttl">Laboratório</div><div class="co">Controle Tecnológico de Concreto</div></div>
-      <div class="right"><span>${userEmail}</span><button class="sair" onclick="sair()">Sair</button></div>
+      <div class="right"><span>${userEmail}</span>${perfisUsuario.includes('admin')?`<button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="exportarBackup()">Exportar tudo</button>`:''}<button class="sair" onclick="sair()">Sair</button></div>
     </div>
     <div class="tabs">
       <button class="tab ${abaAtual==='programar'?'on':''}" onclick="irAba('programar')">Programar idades</button>
@@ -132,6 +133,69 @@ function casca(){
     <div class="wrap" id="wrap"></div>`;
 }
 function irAba(a){ abaAtual=a; render(); }
+
+// ---- BACK-UP COMPLETO (Excel, todas as tabelas) ----
+async function exportarBackup(){
+  if(!window.XLSX){ alert('A biblioteca de planilha não carregou. Verifique a conexão e recarregue a página.'); return; }
+  const aviso = document.createElement('div');
+  aviso.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999';
+  aviso.innerHTML='<div style="background:#fff;padding:22px 28px;border-radius:14px;font-weight:700">Gerando back-up… aguarde</div>';
+  document.body.appendChild(aviso);
+  try{
+    // puxa tudo, com os nomes legíveis já resolvidos
+    const concs = await pegarTudo('concretagens','id,data_concretagem,responsavel,responsavel_nome,finalizada,assinado,assinante_nome,assinado_em,obras(nome),pavimentos(nome),elementos(nome),concreteiras(nome)');
+    const bets  = await pegarTudo('betoneiras','id,concretagem_id,nota_fiscal,lacre,hora_chegada,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,aceita,observacao,motivos_recusa(nome)');
+    const cps   = await pegarTudo('corpos_prova','id,betoneira_id,numero,idade_prevista,data_prevista,descartado');
+    const romps = await pegarTudo('rompimentos','id,corpo_prova_id,idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,observacao');
+
+    const fData = v => v ? String(v).slice(0,10).split('-').reverse().join('/') : '';
+    const linConc = concs.map(c=>({
+      ID:c.id, Data:fData(c.data_concretagem), Obra:c.obras&&c.obras.nome, Pavimento:c.pavimentos&&c.pavimentos.nome,
+      Elemento:c.elementos&&c.elementos.nome, Concreteira:c.concreteiras&&c.concreteiras.nome,
+      Responsável:c.responsavel_nome||c.responsavel, Finalizada:c.finalizada?'sim':'não',
+      Assinada:c.assinado?'sim':'não', 'Resp. Engenharia':c.assinante_nome||'', 'Assinada em':fData(c.assinado_em)
+    }));
+    const linBet = bets.map(b=>({
+      ID:b.id, 'Concretagem (ID)':b.concretagem_id, NF:b.nota_fiscal, Lacre:b.lacre, Chegada:b.hora_chegada,
+      fck:b.fck, 'Slump esp.':b.slump_especificado, Tolerância:b.tolerancia, 'Descrição traço':b.traco_descricao,
+      'Slump medido':b.slump_medido, 'Água (L)':b.agua_adicionada, 'Volume (m³)':b.volume,
+      Aceite:b.aceita?'aceita':'recusada', Motivo:b.motivos_recusa&&b.motivos_recusa.nome, Observação:b.observacao
+    }));
+    const linCp = cps.map(c=>({
+      ID:c.id, 'Betoneira (ID)':c.betoneira_id, 'Nº CP':c.numero, 'Idade prevista (d)':c.idade_prevista,
+      'Data prevista':fData(c.data_prevista), Descartado:c.descartado?'sim':'não'
+    }));
+    const linRomp = romps.map(r=>({
+      ID:r.id, 'CP (ID)':r.corpo_prova_id, 'Idade (d)':r.idade_real, 'Data rompim.':fData(r.data_rompimento),
+      'Prensa (tf)':r.prensa1_tf, 'Resultado (MPa)':r.resultado_mpa, Confirmado:r.confirmado?'sim':'não', Observação:r.observacao
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linConc), 'Concretagens');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linBet),  'Betoneiras');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linCp),   'Corpos de prova');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linRomp), 'Rompimentos');
+
+    const hoje = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `backup_gtabc_${hoje}.xlsx`);
+  }catch(e){
+    alert('Não consegui gerar o back-up: '+(e&&e.message?e.message:e));
+  }finally{
+    document.body.removeChild(aviso);
+  }
+}
+// lê a tabela inteira em páginas de 1000 (limite do Supabase)
+async function pegarTudo(tabela, cols){
+  let todos=[], de=0; const passo=1000;
+  while(true){
+    const { data, error } = await sb.from(tabela).select(cols).range(de, de+passo-1);
+    if(error) throw error;
+    todos = todos.concat(data||[]);
+    if(!data || data.length<passo) break;
+    de += passo;
+  }
+  return todos;
+}
 function render(){
   root.innerHTML = casca();
   if(abaAtual==='programar') abaProgramar();
