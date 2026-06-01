@@ -20,7 +20,6 @@ html,body{margin:0;background:var(--paper);color:var(--ink);
 .mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
 button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
 
-/* layout celular em tela cheia (no app instalado não há moldura) */
 .screen{min-height:100vh;display:flex;flex-direction:column;background:var(--paper)}
 .appbar{background:#fff;border-bottom:1px solid var(--line);padding:14px 16px;
   display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10;
@@ -30,6 +29,7 @@ button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
 .appbar .co{font-size:10.5px;color:var(--muted);font-weight:600}
 .appbar .back{color:var(--accent);font-size:26px;line-height:1;font-weight:700;background:none;border:0;padding:0 4px 0 0}
 .appbar .net{margin-left:auto;font-size:11px;display:flex;align-items:center;gap:6px;color:var(--muted)}
+.appbar .sair{background:none;border:0;color:var(--accent);font-size:12px;font-weight:700}
 .netdot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
 .netdot.off{background:var(--warn)}
 
@@ -58,6 +58,7 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 
 .bigbtn{width:100%;padding:17px;border-radius:13px;border:0;background:var(--accent);color:#fff;
   font-weight:700;font-size:17px;min-height:58px}
+.bigbtn:disabled{opacity:.6}
 .bigbtn.ghost{background:#fff;color:var(--accent-ink);border:2px solid var(--accent);font-size:15px;padding:13px;min-height:auto}
 
 .tcard{border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:13px 14px;margin-bottom:10px;position:relative}
@@ -68,95 +69,134 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .estado{text-align:center;color:var(--muted);padding:40px 20px;font-size:14px;line-height:1.5}
 .erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;padding:14px;font-size:13px;line-height:1.5;margin:10px 0}
 
-/* lista de sugestões (datalist nativo cobre, mas deixamos o input livre) */
+/* login */
+.login-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px;max-width:420px;margin:0 auto;width:100%}
+.login-logo{font-weight:800;border:3px solid var(--ink);border-radius:12px;padding:10px 16px;font-size:22px;letter-spacing:.5px;margin-bottom:8px}
+.login-tit{color:var(--accent);font-size:20px;font-weight:700;text-align:center;margin:4px 0 2px}
+.login-sub{color:var(--muted);font-size:13px;text-align:center;margin-bottom:26px}
+.login-card{width:100%}
 </style>
 </head>
 <body>
-<div class="screen">
-  <div class="appbar">
-    <button class="back" id="back" style="display:none" onclick="voltar()">‹</button>
-    <div class="logo">GT&amp;ABC</div>
-    <div>
-      <div class="ttl" id="titulo">Concretagem</div>
-      <div class="co" id="coSub">Controle Tecnológico de Concreto</div>
-    </div>
-    <div class="net"><span class="netdot" id="netdot"></span><span id="netlabel">online</span></div>
-  </div>
-  <div class="pbody" id="body"><div class="estado">Carregando…</div></div>
-  <div class="pfoot" id="foot" style="display:none"></div>
+<div class="screen" id="screen">
+  <div class="estado">Carregando…</div>
 </div>
 
-<!-- listas de sugestões (preenchidas do banco) -->
 <datalist id="dl_fck"></datalist>
 <datalist id="dl_slump"></datalist>
 <datalist id="dl_tol"></datalist>
 <datalist id="dl_desc"></datalist>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
 
-const body  = document.getElementById('body');
-const foot  = document.getElementById('foot');
-const back  = document.getElementById('back');
-const titulo= document.getElementById('titulo');
+const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+const screen = document.getElementById('screen');
 
-// ---- estado em memória ----
 const cache = { obras:[], elementos:[], concreteiras:[], pavsPorObra:{} };
-const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null,
-                elementoId:null, concreteiraId:null, tracos:[] };
-let tela = 'home'; // home | abrir
+const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[] };
+let tela = 'home';
+let userEmail = '';
 
-// ---- API ----
-async function api(caminho){
-  const r = await fetch(SUPABASE_URL + "/rest/v1/" + caminho, {
-    headers:{ apikey:ANON_KEY, Authorization:"Bearer "+ANON_KEY }
-  });
-  if(!r.ok) throw new Error("HTTP "+r.status+" — "+await r.text());
-  return r.json();
+// ---------- LOGIN ----------
+function telaLogin(msg){
+  screen.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Controle de Concreto</div>
+      <div class="login-sub">Entre com seu e-mail e senha</div>
+      <div class="login-card">
+        <div class="row"><label class="fld">E-mail</label>
+          <input id="li_email" type="email" inputmode="email" autocapitalize="off" placeholder="seu@email.com"></div>
+        <div class="row"><label class="fld">Senha</label>
+          <input id="li_senha" type="password" placeholder="••••••••"></div>
+        ${msg?`<div class="erro">${msg}</div>`:''}
+        <button class="bigbtn" id="li_btn" onclick="entrar()">Entrar</button>
+      </div>
+    </div>`;
 }
-function erro(e){ body.innerHTML = '<div class="erro"><b>Não consegui carregar.</b><br>'+
-  (e&&e.message?e.message:e)+'</div>'; foot.style.display='none'; }
+async function entrar(){
+  const email = document.getElementById('li_email').value.trim();
+  const senha = document.getElementById('li_senha').value;
+  const btn = document.getElementById('li_btn');
+  if(!email || !senha){ telaLogin('Preencha e-mail e senha.'); return; }
+  btn.disabled = true; btn.textContent = 'Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+  if(error){ telaLogin('Não consegui entrar: ' + error.message); return; }
+  userEmail = data.user.email;
+  iniciarApp();
+}
+async function sair(){
+  await sb.auth.signOut();
+  userEmail = '';
+  telaLogin('');
+}
 
-// ---- carga inicial dos cadastros ----
+// ---------- CASCA (appbar) ----------
+function casca(titulo, opts={}){
+  return `
+    <div class="appbar">
+      ${opts.back?`<button class="back" onclick="voltar()">‹</button>`:''}
+      <div class="logo">GT&amp;ABC</div>
+      <div>
+        <div class="ttl">${titulo}</div>
+        <div class="co">${userEmail||'Controle Tecnológico de Concreto'}</div>
+      </div>
+      <button class="sair" onclick="sair()">Sair</button>
+    </div>
+    <div class="pbody" id="body"></div>
+    <div class="pfoot" id="foot" style="display:none"></div>`;
+}
+function erro(e){
+  const b=document.getElementById('body');
+  if(b) b.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e&&e.message?e.message:e)+'</div>';
+}
+
+// ---------- API de leitura (via supabase-js) ----------
 async function carregarCadastros(){
+  const q = (t,extra)=>sb.from(t).select('*');
   const [obras, elementos, concreteiras, fck, slump, tol, desc] = await Promise.all([
-    api("obras?ativa=eq.true&order=nome"),
-    api("elementos?ativo=eq.true&order=ordem"),
-    api("concreteiras?ativa=eq.true&order=nome"),
-    api("opcoes_fck?ativo=eq.true&order=ordem"),
-    api("opcoes_slump?ativo=eq.true&order=ordem"),
-    api("opcoes_tolerancia?ativo=eq.true&order=ordem"),
-    api("opcoes_descricao?ativo=eq.true&order=ordem"),
+    sb.from('obras').select('*').eq('ativa',true).order('nome'),
+    sb.from('elementos').select('*').eq('ativo',true).order('ordem'),
+    sb.from('concreteiras').select('*').eq('ativa',true).order('nome'),
+    sb.from('opcoes_fck').select('*').eq('ativo',true).order('ordem'),
+    sb.from('opcoes_slump').select('*').eq('ativo',true).order('ordem'),
+    sb.from('opcoes_tolerancia').select('*').eq('ativo',true).order('ordem'),
+    sb.from('opcoes_descricao').select('*').eq('ativo',true).order('ordem'),
   ]);
-  cache.obras=obras; cache.elementos=elementos; cache.concreteiras=concreteiras;
-  document.getElementById('dl_fck').innerHTML  = fck.map(x=>`<option value="${x.valor}">`).join('');
-  document.getElementById('dl_slump').innerHTML= slump.map(x=>`<option value="${x.valor}">`).join('');
-  document.getElementById('dl_tol').innerHTML  = tol.map(x=>`<option value="${x.valor}">`).join('');
-  document.getElementById('dl_desc').innerHTML = desc.map(x=>`<option value="${x.nome.replace(/"/g,'&quot;')}">`).join('');
+  for(const r of [obras,elementos,concreteiras,fck,slump,tol,desc]) if(r.error) throw r.error;
+  cache.obras=obras.data; cache.elementos=elementos.data; cache.concreteiras=concreteiras.data;
+  document.getElementById('dl_fck').innerHTML  = fck.data.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_slump').innerHTML= slump.data.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_tol').innerHTML  = tol.data.map(x=>`<option value="${x.valor}">`).join('');
+  document.getElementById('dl_desc').innerHTML = desc.data.map(x=>`<option value="${(x.nome||'').replace(/"/g,'&quot;')}">`).join('');
 }
 async function pavimentosDe(obraId){
   if(cache.pavsPorObra[obraId]) return cache.pavsPorObra[obraId];
-  const p = await api("pavimentos?obra_id=eq."+obraId+"&order=ordem.desc");
-  cache.pavsPorObra[obraId]=p; return p;
+  const { data, error } = await sb.from('pavimentos').select('*').eq('obra_id',obraId).order('ordem',{ascending:false});
+  if(error) throw error;
+  cache.pavsPorObra[obraId]=data; return data;
 }
 
-// ---- HOME ----
+// ---------- HOME ----------
 function verHome(){
-  tela='home'; titulo.textContent='Concretagem'; back.style.display='none'; foot.style.display='none';
-  body.innerHTML = `
+  tela='home';
+  screen.innerHTML = casca('Concretagem', {back:false});
+  document.getElementById('body').innerHTML = `
     <div class="hello">Olá!</div>
     <div class="sub" style="margin-bottom:20px">O que vamos fazer?</div>
     <button class="homebtn primary" onclick="abrirConcretagem()"><span class="hi">+</span><span><b>Nova concretagem</b><small>registrar uma concretagem no canteiro</small></span></button>
     <button class="homebtn" onclick="aviso('Concretagens concluídas')"><span class="hi">✓</span><span><b>Concretagens concluídas</b><small>em breve</small></span></button>
-    <button class="homebtn" onclick="aviso('Pendentes de assinatura')"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>em breve</small></span></button>`;
+    <button class="homebtn" onclick="aviso('Pendentes de coleta de assinatura')"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>em breve</small></span></button>`;
 }
 function aviso(o){ alert(o+' — esta tela ainda será construída.'); }
 
-// ---- ABRIR CONCRETAGEM ----
+// ---------- ABRIR CONCRETAGEM ----------
 async function abrirConcretagem(){
-  tela='abrir'; titulo.textContent='Nova concretagem'; back.style.display='';
-  // defaults
+  tela='abrir';
+  screen.innerHTML = casca('Nova concretagem', {back:true});
   if(!draft.obraId && cache.obras.length){ draft.obraId=cache.obras[0].id; draft.obraNome=cache.obras[0].nome; }
   if(!draft.elementoId && cache.elementos.length){ draft.elementoId=cache.elementos[0].id; }
   if(!draft.concreteiraId && cache.concreteiras.length){ draft.concreteiraId=cache.concreteiras[0].id; }
@@ -164,45 +204,32 @@ async function abrirConcretagem(){
   await desenharAbrir();
 }
 async function desenharAbrir(){
+  const body=document.getElementById('body'), foot=document.getElementById('foot');
   const pavs = await pavimentosDe(draft.obraId);
   if(!draft.pavId && pavs.length){ draft.pavId=pavs[0].id; draft.pavNome=pavs[0].nome; }
-
   const obrasOpt = cache.obras.map(o=>`<option value="${o.id}" ${o.id===draft.obraId?'selected':''}>${o.nome}</option>`).join('');
   const pavsOpt  = pavs.map(p=>`<option value="${p.id}" ${p.id===draft.pavId?'selected':''}>${p.nome}</option>`).join('');
   const elemOpt  = cache.elementos.map(e=>`<option value="${e.id}" ${e.id===draft.elementoId?'selected':''}>${e.nome}</option>`).join('');
   const concOpt  = cache.concreteiras.map(c=>`<option value="${c.id}" ${c.id===draft.concreteiraId?'selected':''}>${c.nome}</option>`).join('');
-
   let html = `
-    <div class="row"><label class="fld">Obra</label>
-      <select onchange="mudarObra(this.value)">${obrasOpt}</select></div>
-    <div class="row"><label class="fld">Pavimento</label>
-      <select onchange="setPav(this.value)">${pavsOpt}</select></div>
-    <div class="row"><label class="fld">Elemento concretado</label>
-      <select onchange="draft.elementoId=+this.value">${elemOpt}</select></div>
-    <div class="row"><label class="fld">Concreteira</label>
-      <select onchange="draft.concreteiraId=+this.value">${concOpt}</select></div>
-
+    <div class="row"><label class="fld">Obra</label><select onchange="mudarObra(this.value)">${obrasOpt}</select></div>
+    <div class="row"><label class="fld">Pavimento</label><select onchange="setPav(this.value)">${pavsOpt}</select></div>
+    <div class="row"><label class="fld">Elemento concretado</label><select onchange="draft.elementoId=+this.value">${elemOpt}</select></div>
+    <div class="row"><label class="fld">Concreteira</label><select onchange="draft.concreteiraId=+this.value">${concOpt}</select></div>
     <div class="fldlabel">Traços desta concretagem</div>`;
-
   draft.tracos.forEach((t,i)=>{
     html += `<div class="tcard">${draft.tracos.length>1?`<button class="x" onclick="rmTraco(${i})">✕</button>`:''}
       <div class="three">
-        <div class="row" style="margin-bottom:10px"><label class="fld">Fck</label>
-          <input list="dl_fck" inputmode="decimal" value="${t.fck}" placeholder="—" onchange="draft.tracos[${i}].fck=this.value"></div>
-        <div class="row" style="margin-bottom:10px"><label class="fld">Slump</label>
-          <input list="dl_slump" inputmode="decimal" value="${t.slump}" onchange="draft.tracos[${i}].slump=this.value"></div>
-        <div class="row" style="margin-bottom:10px"><label class="fld">±</label>
-          <input list="dl_tol" inputmode="decimal" value="${t.tol}" onchange="draft.tracos[${i}].tol=this.value"></div>
+        <div class="row" style="margin-bottom:10px"><label class="fld">Fck</label><input list="dl_fck" inputmode="decimal" value="${t.fck}" placeholder="—" onchange="draft.tracos[${i}].fck=this.value"></div>
+        <div class="row" style="margin-bottom:10px"><label class="fld">Slump</label><input list="dl_slump" inputmode="decimal" value="${t.slump}" onchange="draft.tracos[${i}].slump=this.value"></div>
+        <div class="row" style="margin-bottom:10px"><label class="fld">±</label><input list="dl_tol" inputmode="decimal" value="${t.tol}" onchange="draft.tracos[${i}].tol=this.value"></div>
       </div>
-      <div class="row" style="margin-bottom:0"><label class="fld">Descrição</label>
-        <input list="dl_desc" value="${t.desc||''}" placeholder="opcional" onchange="draft.tracos[${i}].desc=this.value"></div>
+      <div class="row" style="margin-bottom:0"><label class="fld">Descrição</label><input list="dl_desc" value="${t.desc||''}" placeholder="opcional" onchange="draft.tracos[${i}].desc=this.value"></div>
     </div>`;
   });
   html += `<button class="bigbtn ghost" onclick="addTraco()">+ adicionar traço</button>`;
   body.innerHTML = html;
-
-  foot.style.display='';
-  foot.innerHTML = `<button class="bigbtn" onclick="iniciar()">Iniciar ▸</button>`;
+  foot.style.display=''; foot.innerHTML = `<button class="bigbtn" onclick="iniciar()">Iniciar ▸</button>`;
 }
 async function mudarObra(v){ draft.obraId=+v; const o=cache.obras.find(x=>x.id===+v); draft.obraNome=o?o.nome:null; draft.pavId=null; draft.pavNome=null; await desenharAbrir(); }
 function setPav(v){ draft.pavId=+v; const p=(cache.pavsPorObra[draft.obraId]||[]).find(x=>x.id===+v); draft.pavNome=p?p.nome:null; }
@@ -214,29 +241,23 @@ function iniciar(){
     `Elemento: ${(cache.elementos.find(e=>e.id===draft.elementoId)||{}).nome}\n`+
     `Concreteira: ${(cache.concreteiras.find(c=>c.id===draft.concreteiraId)||{}).nome}\n`+
     `Traços: ${draft.tracos.map(t=>'Fck '+t.fck+' / slump '+t.slump+'±'+t.tol+(t.desc?' / '+t.desc:'')).join('  |  ')}`;
-  alert('✓ Concretagem montada!\n\n'+resumo+'\n\n(A próxima tela — lançar betoneiras — será construída no próximo passo.)');
+  alert('✓ Concretagem montada!\n\n'+resumo+'\n\n(A próxima tela — lançar betoneiras e gravar no banco — será o próximo passo.)');
 }
-
-// ---- navegação ----
 function voltar(){ if(tela==='abrir') verHome(); }
 
-// ---- rede / status ----
-function atualizaRede(){
-  const on = navigator.onLine;
-  document.getElementById('netdot').className = 'netdot'+(on?'':' off');
-  document.getElementById('netlabel').textContent = on?'online':'offline';
-}
-window.addEventListener('online', atualizaRede);
-window.addEventListener('offline', atualizaRede);
-
-// ---- início ----
-(async function(){
-  atualizaRede();
+// ---------- INÍCIO ----------
+async function iniciarApp(){
+  screen.innerHTML = casca('Concretagem',{back:false});
+  document.getElementById('body').innerHTML = '<div class="estado">Carregando dados…</div>';
   try{ await carregarCadastros(); verHome(); }
   catch(e){ erro(e); }
+}
+(async function(){
+  const { data } = await sb.auth.getSession();
+  if(data.session){ userEmail = data.session.user.email; iniciarApp(); }
+  else telaLogin('');
 })();
 
-// service worker (offline)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', ()=>navigator.serviceWorker.register('service-worker.js'));
 }
