@@ -63,6 +63,11 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 
 .tcard{border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:13px 14px;margin-bottom:10px;position:relative}
 .tcard .x{position:absolute;top:8px;right:12px;color:var(--bad);background:none;border:0;font-size:20px;line-height:1}
+.ar{flex:1;padding:16px;border-radius:12px;border:2px solid var(--line);background:#fff;font-weight:700;font-size:15px;color:var(--muted)}
+.ar.on-a{border-color:var(--ok);background:#eaf3ec;color:var(--ok)}
+.ar.on-r{border-color:var(--bad);background:#fde8e2;color:var(--bad)}
+.chipbtn{min-width:54px;padding:12px 16px;border-radius:11px;border:2px solid var(--line);background:#fff;font-weight:700;font-size:15px;color:var(--ink)}
+.chipbtn.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
 .hello{font-weight:700;font-size:20px;margin:6px 0 4px}
 .sub{font-size:13px;color:var(--muted)}
 .fldlabel{font-size:13.5px;font-weight:700;color:#2a2a27;margin:18px 0 8px}
@@ -95,10 +100,13 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const screen = document.getElementById('screen');
 
-const cache = { obras:[], elementos:[], concreteiras:[], pavsPorObra:{} };
-const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[] };
+const cache = { obras:[], elementos:[], concreteiras:[], motivos:[], pavsPorObra:{} };
+const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[], betoneiras:[], cur:null };
 let tela = 'home';
 let userEmail = '';
+
+function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:6, cpModo:'preset', motivoId:null, obs:'' }; }
 
 // ---------- LOGIN ----------
 function telaLogin(msg){
@@ -157,17 +165,18 @@ function erro(e){
 // ---------- API de leitura (via supabase-js) ----------
 async function carregarCadastros(){
   const q = (t,extra)=>sb.from(t).select('*');
-  const [obras, elementos, concreteiras, fck, slump, tol, desc] = await Promise.all([
+  const [obras, elementos, concreteiras, motivos, fck, slump, tol, desc] = await Promise.all([
     sb.from('obras').select('*').eq('ativa',true).order('nome'),
     sb.from('elementos').select('*').eq('ativo',true).order('ordem'),
     sb.from('concreteiras').select('*').eq('ativa',true).order('nome'),
+    sb.from('motivos_recusa').select('*').eq('ativo',true).order('ordem'),
     sb.from('opcoes_fck').select('*').eq('ativo',true).order('ordem'),
     sb.from('opcoes_slump').select('*').eq('ativo',true).order('ordem'),
     sb.from('opcoes_tolerancia').select('*').eq('ativo',true).order('ordem'),
     sb.from('opcoes_descricao').select('*').eq('ativo',true).order('ordem'),
   ]);
-  for(const r of [obras,elementos,concreteiras,fck,slump,tol,desc]) if(r.error) throw r.error;
-  cache.obras=obras.data; cache.elementos=elementos.data; cache.concreteiras=concreteiras.data;
+  for(const r of [obras,elementos,concreteiras,motivos,fck,slump,tol,desc]) if(r.error) throw r.error;
+  cache.obras=obras.data; cache.elementos=elementos.data; cache.concreteiras=concreteiras.data; cache.motivos=motivos.data;
   document.getElementById('dl_fck').innerHTML  = fck.data.map(x=>`<option value="${x.valor}">`).join('');
   document.getElementById('dl_slump').innerHTML= slump.data.map(x=>`<option value="${x.valor}">`).join('');
   document.getElementById('dl_tol').innerHTML  = tol.data.map(x=>`<option value="${x.valor}">`).join('');
@@ -237,13 +246,167 @@ function addTraco(){ draft.tracos.push({fck:'',slump:'16',tol:'3',desc:''}); des
 function rmTraco(i){ draft.tracos.splice(i,1); desenharAbrir(); }
 function iniciar(){
   if(!draft.tracos.some(t=>String(t.fck).trim())){ alert('Informe o Fck de ao menos um traço.'); return; }
-  const resumo = `Obra: ${draft.obraNome}\nPavimento: ${draft.pavNome}\n`+
-    `Elemento: ${(cache.elementos.find(e=>e.id===draft.elementoId)||{}).nome}\n`+
-    `Concreteira: ${(cache.concreteiras.find(c=>c.id===draft.concreteiraId)||{}).nome}\n`+
-    `Traços: ${draft.tracos.map(t=>'Fck '+t.fck+' / slump '+t.slump+'±'+t.tol+(t.desc?' / '+t.desc:'')).join('  |  ')}`;
-  alert('✓ Concretagem montada!\n\n'+resumo+'\n\n(A próxima tela — lançar betoneiras e gravar no banco — será o próximo passo.)');
+  // só mantém traços com Fck preenchido
+  draft.tracos = draft.tracos.filter(t=>String(t.fck).trim());
+  draft.betoneiras = [];
+  draft.cur = novaBetoneira();
+  telaBetoneira();
 }
-function voltar(){ if(tela==='abrir') verHome(); }
+
+// ---------- TELA BETONEIRA ----------
+function telaBetoneira(){
+  tela='betoneira';
+  screen.innerHTML = casca('Dados iniciais', {back:true});
+  desenharBetoneira();
+}
+function desenharBetoneira(){
+  const body=document.getElementById('body'), foot=document.getElementById('foot');
+  const cur=draft.cur;
+  const tracoOpt = draft.tracos.map((t,i)=>`<option value="${i}" ${i===cur.tracoIdx?'selected':''}>Fck ${t.fck} · slump ${t.slump}±${t.tol}${t.desc?' · '+t.desc:''}</option>`).join('');
+  const nBt = draft.betoneiras.length;
+  let html = `
+    <div class="sub" style="margin:-2px 0 14px"><b>${draft.obraNome}</b> · ${draft.pavNome} · betoneira ${nBt+1}</div>
+    <div class="row"><label class="fld">Traço</label><select onchange="draft.cur.tracoIdx=+this.value">${tracoOpt}</select></div>
+    <div class="two" style="display:flex;gap:10px">
+      <div class="row" style="flex:1"><label class="fld">Nota fiscal</label><input value="${cur.nf}" inputmode="numeric" onchange="draft.cur.nf=this.value" placeholder="NF"></div>
+      <div class="row" style="flex:1"><label class="fld">Lacre</label><input value="${cur.lacre}" inputmode="numeric" onchange="draft.cur.lacre=this.value" placeholder="—"></div>
+    </div>
+    <div class="two" style="display:flex;gap:10px">
+      <div class="row" style="flex:1"><label class="fld">Chegada</label><input value="${cur.hora}" onchange="draft.cur.hora=this.value" placeholder="hh:mm"></div>
+      <div class="row" style="flex:1"><label class="fld">Slump medido</label><input value="${cur.slump}" inputmode="decimal" onchange="draft.cur.slump=this.value" placeholder="cm"></div>
+    </div>
+    <div class="two" style="display:flex;gap:10px">
+      <div class="row" style="flex:1"><label class="fld">Água (L)</label><input value="${cur.agua}" inputmode="decimal" onchange="draft.cur.agua=this.value"></div>
+      <div class="row" style="flex:1"><label class="fld">Volume (m³)</label><input value="${cur.volume}" inputmode="decimal" onchange="draft.cur.volume=this.value" placeholder="—"></div>
+    </div>
+
+    <div class="fldlabel">Aceite da betoneira</div>
+    <div style="display:flex;gap:10px;margin-bottom:6px">
+      <button class="ar ${cur.aceita?'on-a':''}" onclick="setAceite(true)">ACEITAR</button>
+      <button class="ar ${!cur.aceita?'on-r':''}" onclick="setAceite(false)">RECUSAR</button>
+    </div>`;
+
+  if(cur.aceita){
+    html += `<div class="fldlabel">Corpos de prova moldados</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="chipbtn ${cur.cpModo==='preset'&&cur.cpQtd===4?'on':''}" onclick="setCp(4)">4</button>
+        <button class="chipbtn ${cur.cpModo==='preset'&&cur.cpQtd===6?'on':''}" onclick="setCp(6)">6</button>
+        <button class="chipbtn ${cur.cpModo==='outro'?'on':''}" onclick="setCpOutro()">Outro</button>
+        ${cur.cpModo==='outro'?`<input style="width:90px;min-height:46px" inputmode="numeric" value="${cur.cpQtd||''}" placeholder="qtd" onchange="draft.cur.cpQtd=parseInt(this.value)||0">`:''}
+      </div>`;
+  } else {
+    const motOpt = ['<option value="" '+(cur.motivoId?'':'selected')+' disabled>selecione…</option>']
+      .concat(cache.motivos.map(m=>`<option value="${m.id}" ${cur.motivoId===m.id?'selected':''}>${m.nome}</option>`)).join('');
+    html += `<div class="row"><label class="fld">Motivo da recusa <span style="color:var(--accent)">— obrigatório</span></label>
+        <select onchange="draft.cur.motivoId=+this.value">${motOpt}</select></div>
+      <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:2px">Betoneira recusada — não se molda corpo de prova nesta NF.</div>`;
+  }
+  html += `<div class="row" style="margin-top:14px"><label class="fld">Observações</label><input value="${cur.obs||''}" onchange="draft.cur.obs=this.value" placeholder="opcional"></div>`;
+  body.innerHTML = html;
+
+  foot.style.display='';
+  foot.innerHTML = `
+    <button class="bigbtn" onclick="finalizar()">Finalizar concretagem</button>
+    <button class="bigbtn ghost" onclick="proximaBetoneira()">Próxima betoneira ▸</button>`;
+}
+function setAceite(a){ draft.cur.aceita=a; if(a&&!draft.cur.cpQtd){draft.cur.cpQtd=6;draft.cur.cpModo='preset';} desenharBetoneira(); }
+function setCp(n){ draft.cur.cpQtd=n; draft.cur.cpModo='preset'; desenharBetoneira(); }
+function setCpOutro(){ draft.cur.cpModo='outro'; draft.cur.cpQtd=0; desenharBetoneira(); }
+
+function validarBetoneira(){
+  const c=draft.cur;
+  if(!String(c.nf).trim()){ alert('Informe a nota fiscal.'); return false; }
+  if(!(parseFloat(String(c.volume).replace(',','.'))>0)){ alert('Informe o volume (m³).'); return false; }
+  if(c.aceita){ if(!(c.cpQtd>0)){ alert('Informe quantos CPs foram moldados.'); return false; } }
+  else { if(!c.motivoId){ alert('Selecione o motivo da recusa.'); return false; } }
+  return true;
+}
+function proximaBetoneira(){
+  if(!validarBetoneira()) return;
+  draft.betoneiras.push(draft.cur);
+  draft.cur = novaBetoneira();
+  draft.cur.tracoIdx = draft.betoneiras[draft.betoneiras.length-1].tracoIdx; // mantém o último traço
+  telaBetoneira();
+}
+
+// ---------- GRAVAÇÃO NO BANCO ----------
+async function finalizar(){
+  if(!validarBetoneira()) return;
+  draft.betoneiras.push(draft.cur);
+  draft.cur=null;
+
+  const foot=document.getElementById('foot');
+  foot.innerHTML = `<button class="bigbtn" disabled>Gravando…</button>`;
+  const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
+
+  try{
+    // 1) concretagem
+    const hoje = new Date().toISOString().slice(0,10);
+    const { data:conc, error:e1 } = await sb.from('concretagens').insert({
+      obra_id:draft.obraId, pavimento_id:draft.pavId, elemento_id:draft.elementoId,
+      concreteira_id:draft.concreteiraId, data_concretagem:hoje, responsavel:userEmail
+    }).select().single();
+    if(e1) throw e1;
+
+    let totalCP=0; const cpsCriados=[];
+    // 2) betoneiras + 3) CPs
+    for(const b of draft.betoneiras){
+      const t = draft.tracos[b.tracoIdx]||{};
+      const { data:bet, error:e2 } = await sb.from('betoneiras').insert({
+        concretagem_id:conc.id, fck:num(t.fck), nota_fiscal:String(b.nf),
+        lacre:b.lacre||null, hora_chegada:b.hora||null, slump_medido:num(b.slump),
+        agua_adicionada:num(b.agua)||0, volume:num(b.volume)||0,
+        aceita:b.aceita, motivo_recusa_id:b.aceita?null:b.motivoId, observacao:b.obs||null
+      }).select().single();
+      if(e2) throw e2;
+
+      if(b.aceita && b.cpQtd>0){
+        const linhas = Array.from({length:b.cpQtd}).map(()=>({ betoneira_id:bet.id }));
+        const { data:cps, error:e3 } = await sb.from('corpos_prova').insert(linhas).select('numero');
+        if(e3) throw e3;
+        cps.forEach(c=>cpsCriados.push(c.numero));
+        totalCP += cps.length;
+      }
+    }
+
+    // sucesso
+    const aceitas=draft.betoneiras.filter(b=>b.aceita).length;
+    const recusas=draft.betoneiras.length-aceitas;
+    cpsCriados.sort((a,b)=>a-b);
+    const faixa = cpsCriados.length ? (' (nº '+cpsCriados[0]+' a '+cpsCriados[cpsCriados.length-1]+')') : '';
+    screen.innerHTML = casca('Concretagem salva', {back:false});
+    document.getElementById('body').innerHTML = `
+      <div style="text-align:center;padding:18px 6px">
+        <div style="font-size:46px">✓</div>
+        <div style="font-weight:700;font-size:19px;margin:6px 0 4px;color:var(--ok)">Concretagem gravada!</div>
+        <div class="sub">${draft.obraNome} · ${draft.pavNome}</div>
+      </div>
+      <div class="tcard"><b>Resumo</b>
+        <div class="sub" style="margin-top:8px;line-height:1.7">
+          Betoneiras: <b>${draft.betoneiras.length}</b> (${aceitas} aceita(s)${recusas?', '+recusas+' recusa(s)':''})<br>
+          Corpos de prova moldados: <b>${totalCP}</b>${faixa}<br>
+          Registrado por: ${userEmail}
+        </div>
+      </div>`;
+    const foot2=document.getElementById('foot');
+    foot2.style.display=''; foot2.innerHTML = `<button class="bigbtn" onclick="zerarEVoltar()">Concluir</button>`;
+  }catch(e){
+    foot.innerHTML = `<button class="bigbtn" onclick="finalizar()">Tentar gravar de novo</button>`;
+    const body=document.getElementById('body');
+    body.insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e&&e.message?e.message:e)+'</div>');
+    // devolve a betoneira atual ao fluxo (não perde dados)
+    draft.cur = draft.betoneiras.pop();
+  }
+}
+function zerarEVoltar(){
+  draft.obraId=null; draft.obraNome=null; draft.pavId=null; draft.pavNome=null;
+  draft.elementoId=null; draft.concreteiraId=null; draft.tracos=[]; draft.betoneiras=[]; draft.cur=null;
+  verHome();
+}
+function voltar(){
+  if(tela==='abrir') verHome();
+  else if(tela==='betoneira') abrirConcretagem();
+}
 
 // ---------- INÍCIO ----------
 async function iniciarApp(){
