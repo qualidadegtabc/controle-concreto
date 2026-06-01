@@ -260,24 +260,23 @@ let rompGrupos = [];        // duplas a romper
 let rompInputs = {};        // { cpId: tf }
 let rompObs = {};           // { duplaKey: obs }
 let rompFiltroObra = 'Todas';
-let rompidosDia = [];       // rompimentos já confirmados na data do filtro
-let editRomp = {};          // edições em aberto: { duplaId: {...} }
-let rompIdade = {};         // { duplaKey: idade ajustada nesta rompida }
+let rompFiltroData = '';     // '' = nenhuma ainda; 'ATRASADOS' ou uma data ISO
+let rompDatasDisp = [];      // datas previstas com CP a romper
+let rompidosDia = [];        // rompimentos já confirmados (exibição)
+let editRomp = {};           // edição de dupla rompida
+let rompIdade = {};          // (mantido por compat)
 
 function hojeISO(){ return new Date().toISOString().slice(0,10); }
 
-async function buscarParaRomper(dataLimiteISO){
-  // CPs com idade programada, não rompidos ainda, data_prevista <= limite
+// busca TODAS as duplas pendentes (idade programada, não rompidas) — sem limite de data
+async function buscarTodasPendentes(){
   const { data, error } = await sb.from('corpos_prova')
     .select('id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)')
     .not('idade_prevista','is',null)
     .eq('descartado',false)
-    .lte('data_prevista', dataLimiteISO)
     .order('numero',{ascending:true});
   if(error) throw error;
-  // filtra os que ainda NÃO têm rompimento confirmado
   const semRomp = (data||[]).filter(cp=> !cp.rompimentos || cp.rompimentos.length===0);
-  // agrupa por betoneira + idade (duplas irmãs com mesma idade prevista)
   const grp={};
   semRomp.forEach(cp=>{
     const b=cp.betoneiras, c=b.concretagens;
@@ -286,17 +285,11 @@ async function buscarParaRomper(dataLimiteISO){
       obra:c.obras.nome, pav:c.pavimentos.nome, idade:cp.idade_prevista, prevista:cp.data_prevista, moldagem:c.data_concretagem, cps:[] };
     grp[chave].cps.push({id:cp.id, numero:cp.numero});
   });
-  // forma duplas dentro de cada grupo (par na ordem; ímpar sobra 1)
-  const grupos=Object.values(grp);
   const duplas=[];
-  grupos.forEach(g=>{
+  Object.values(grp).forEach(g=>{
     g.cps.sort((a,b)=>a.numero-b.numero);
-    for(let i=0;i<g.cps.length;i+=2){
-      const par=g.cps.slice(i,i+2);
-      duplas.push({ ...g, cps:par, duplaKey:g.key+':'+i });
-    }
+    for(let i=0;i<g.cps.length;i+=2) duplas.push({ ...g, cps:g.cps.slice(i,i+2), duplaKey:g.key+':'+i });
   });
-  // ordena por data prevista (mais antigos/atrasados primeiro), depois número
   duplas.sort((a,b)=> a.prevista<b.prevista?-1:a.prevista>b.prevista?1:(a.cps[0].numero-b.cps[0].numero));
   return duplas;
 }
@@ -314,7 +307,6 @@ async function buscarRompidosDia(dataISO){
       nf:b.nota_fiscal, fck:b.fck, obra:c.obras.nome, pav:c.pavimentos.nome,
       idade:r.idade_real, tf:r.prensa1_tf, mpa:r.resultado_mpa, obs:r.observacao };
   });
-  // agrupa por betoneira + idade_real; forma duplas por ordem de número
   const grp={};
   itens.forEach(it=>{
     const chave=it.betoneiraId+'|'+it.idade;
@@ -333,16 +325,48 @@ async function buscarRompidosDia(dataISO){
   return duplas;
 }
 
+let pendentesTodas = []; // cache de todas as duplas pendentes
 async function abaRomper(){
   const wrap=document.getElementById('wrap');
-  if(!rompData) rompData = hojeISO();
   wrap.innerHTML = `<div class="officehead"><h2>Romper</h2><p>Lance as prensas (tf) de cada corpo de prova. O resultado em MPa e a conformidade são calculados automaticamente.</p></div><div class="estado">Buscando corpos de prova…</div>`;
   try{
-    rompGrupos = await buscarParaRomper(rompData);
-    rompidosDia = await buscarRompidosDia(rompData);
-    rompInputs={}; rompObs={}; rompIdade={}; editRomp={};
+    pendentesTodas = await buscarTodasPendentes();
+    // datas previstas disponíveis (com CP a romper), ordenadas
+    rompDatasDisp = [...new Set(pendentesTodas.map(d=>d.prevista))].sort();
+    // define filtro inicial: hoje se houver, senão a 1ª data disponível, senão atrasados
+    if(!rompFiltroData){
+      const hoje=hojeISO();
+      if(rompDatasDisp.includes(hoje)) rompFiltroData=hoje;
+      else if(rompDatasDisp.some(d=>d<hoje)) rompFiltroData='ATRASADOS';
+      else rompFiltroData = rompDatasDisp[0]||'';
+    }
+    aplicarFiltroRomper();
+    // rompidos do dia: usa a data escolhida se for uma data real; senão hoje
+    const dataRomp = (rompFiltroData && rompFiltroData!=='ATRASADOS') ? rompFiltroData : hojeISO();
+    rompidosDia = await buscarRompidosDia(dataRomp);
+    rompInputs={}; rompObs={}; editRomp={};
     desenharRomper();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+// monta rompGrupos conforme o filtro de data
+function aplicarFiltroRomper(){
+  const hoje=hojeISO();
+  if(rompFiltroData==='ATRASADOS'){
+    rompGrupos = pendentesTodas.filter(d=>d.prevista<hoje);
+  } else if(rompFiltroData){
+    // CPs daquela data + atrasados (anteriores)
+    rompGrupos = pendentesTodas.filter(d=>d.prevista<=rompFiltroData);
+  } else {
+    rompGrupos = [];
+  }
+}
+async function trocarDataRomper(v){
+  rompFiltroData = v;
+  aplicarFiltroRomper();
+  const dataRomp = (v && v!=='ATRASADOS') ? v : hojeISO();
+  try{ rompidosDia = await buscarRompidosDia(dataRomp); }catch(e){ rompidosDia=[]; }
+  rompInputs={}; rompObs={};
+  desenharRomper();
 }
 
 function previaMPa(cpId){
@@ -363,21 +387,31 @@ function vereditoHTML(mpa, idade, fck){
   else badge=` <span class="badge b-mut">parcial (${idade}d)</span>`;
   return `<b class="mono">${mpa.toFixed(1)} MPa</b>${badge}`;
 }
-function idadeAtual(d){ return rompIdade[d.duplaKey]!=null ? rompIdade[d.duplaKey] : d.idade; }
+function idadeAtual(d){ return d.idade; }
 function atualizaPrevia(duplaKey){
   const d = rompGrupos.find(x=>x.duplaKey===duplaKey);
   if(!d) return;
   const el = document.getElementById('res_'+duplaKey.replace(/[|:]/g,'_'));
-  if(el) el.innerHTML = vereditoHTML(resultadoDupla(d), idadeAtual(d), d.fck);
-  // recalcula a data prevista exibida conforme idade ajustada
-  const pe = document.getElementById('prev_'+duplaKey.replace(/[|:]/g,'_'));
-  if(pe && d.moldagem){
-    const novaPrev = addDiasISO(d.moldagem, idadeAtual(d));
-    const atrasada = novaPrev < hojeISO();
-    pe.innerHTML = fmtData(novaPrev) + (atrasada?'<br><span class="badge b-bad">atrasada</span>':'');
-  }
+  if(el) el.innerHTML = vereditoHTML(resultadoDupla(d), d.idade, d.fck);
 }
-function mudarIdadeDupla(duplaKey, v){ rompIdade[duplaKey]=+v; atualizaPrevia(duplaKey); }
+// reprograma a idade: salva no banco (idade_prevista + data_prevista) após confirmação
+async function reprogramarIdade(duplaKey, novaIdade, selectEl){
+  const d = pendentesTodas.find(x=>x.duplaKey===duplaKey);
+  if(!d){ return; }
+  novaIdade = +novaIdade;
+  if(novaIdade===d.idade) return;
+  const novaPrev = addDiasISO(d.moldagem, novaIdade);
+  const nums = d.cps.map(c=>c.numero).join(' e ');
+  if(!confirm(`Reprogramar CP ${nums} para ${novaIdade} dias?\nNova data prevista: ${fmtData(novaPrev)}.`)){
+    if(selectEl) selectEl.value = d.idade; // desfaz a seleção visual
+    return;
+  }
+  try{
+    const res = await Promise.all(d.cps.map(c=>sb.from('corpos_prova').update({idade_prevista:novaIdade, data_prevista:novaPrev}).eq('id',c.id)));
+    for(const r of res) if(r.error) throw r.error;
+    await abaRomper(); // recarrega: a dupla reposiciona conforme a nova data
+  }catch(e){ alert('Não consegui reprogramar: '+(e.message||e)); if(selectEl) selectEl.value=d.idade; }
+}
 
 function desenharRomper(){
   const wrap=document.getElementById('wrap');
@@ -385,11 +419,22 @@ function desenharRomper(){
   let lista = rompGrupos;
   if(rompFiltroObra!=='Todas') lista = lista.filter(g=>g.obra===rompFiltroObra);
   const IDADES=[3,4,7,28,63];
+  const hoje=hojeISO();
+  const temAtrasados = pendentesTodas.some(d=>d.prevista<hoje);
+
+  // opções da lista de datas
+  let dataOpts = '';
+  if(temAtrasados) dataOpts += `<option value="ATRASADOS" ${rompFiltroData==='ATRASADOS'?'selected':''}>⚠ Atrasados</option>`;
+  rompDatasDisp.forEach(dt=>{
+    const atr = dt<hoje ? ' (atrasada)' : (dt===hoje?' (hoje)':'');
+    dataOpts += `<option value="${dt}" ${rompFiltroData===dt?'selected':''}>${fmtData(dt)}${atr}</option>`;
+  });
+  if(!dataOpts) dataOpts = '<option>—</option>';
 
   let html=`<div class="officehead"><h2>Romper</h2><p>Lance as prensas (tf) de cada corpo de prova. O resultado em MPa e a conformidade são calculados automaticamente.</p></div>
     <div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap">
-      <div><label style="display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Romper até a data</label>
-        <input type="date" value="${rompData}" onchange="rompData=this.value;abaRomper()"></div>
+      <div><label style="display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Data do rompimento</label>
+        <select style="min-width:200px" onchange="trocarDataRomper(this.value)">${dataOpts}</select></div>
       <div><label style="display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Obra</label>
         <select onchange="rompFiltroObra=this.value;desenharRomper()">${obras.map(o=>`<option ${o===rompFiltroObra?'selected':''}>${o}</option>`).join('')}</select></div>
       <div style="margin-left:auto;color:var(--muted);font-size:13px;align-self:center">${lista.length} dupla(s) a romper</div>
@@ -397,7 +442,7 @@ function desenharRomper(){
 
   // ----- TABELA A ROMPER -----
   if(!lista.length){
-    html += '<div class="estado" style="padding:30px">Nenhum corpo de prova para romper até esta data. 🎉</div>';
+    html += '<div class="estado" style="padding:30px">Nenhum corpo de prova para romper nesta data. 🎉</div>';
   } else {
     html += `<div class="card" style="padding:0;overflow:hidden">
       <table><thead><tr>
@@ -405,12 +450,10 @@ function desenharRomper(){
         <th style="width:200px">Prensas (tf)</th><th style="width:150px">Resultado</th><th>Observação</th>
       </tr></thead><tbody>`;
     lista.forEach(d=>{
-      const idAtual=idadeAtual(d);
-      const prevCalc = d.moldagem ? addDiasISO(d.moldagem, idAtual) : d.prevista;
+      const prevCalc = d.prevista;
       const atrasada = prevCalc < hojeISO();
-      const prevId='prev_'+d.duplaKey.replace(/[|:]/g,'_');
       const prevTxt = fmtData(prevCalc) + (atrasada?'<br><span class="badge b-bad">atrasada</span>':'');
-      const idadeOpts = IDADES.map(x=>`<option value="${x}" ${x==idAtual?'selected':''}>${x} dias</option>`).join('');
+      const idadeOpts = IDADES.map(x=>`<option value="${x}" ${x==d.idade?'selected':''}>${x} dias</option>`).join('');
       const inputs = d.cps.map(c=>`<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0">
           <span class="mono" style="font-size:12px;color:var(--muted)">CP${c.numero}</span>
           <input style="width:68px;padding:8px" inputmode="decimal" placeholder="tf"
@@ -420,8 +463,8 @@ function desenharRomper(){
       html += `<tr>
         <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
         <td class="mono">${d.nf}</td>
-        <td><select style="width:104px;padding:8px" onchange="mudarIdadeDupla('${d.duplaKey}',this.value)">${idadeOpts}</select></td>
-        <td class="mono" id="${prevId}">${prevTxt}</td>
+        <td><select style="width:104px;padding:8px" onchange="reprogramarIdade('${d.duplaKey}',this.value,this)">${idadeOpts}</select></td>
+        <td class="mono">${prevTxt}</td>
         <td>${inputs}</td>
         <td id="${resId}"><span class="muted">—</span></td>
         <td><input style="width:100%;padding:8px" placeholder="opcional" value="${rompObs[d.duplaKey]||''}" oninput="rompObs['${d.duplaKey}']=this.value"></td>
@@ -432,7 +475,8 @@ function desenharRomper(){
   }
 
   // ----- TABELA ROMPIDOS NO DIA (por dupla) -----
-  html += `<div style="margin-top:34px"><h2 style="font-size:19px;margin:0 0 4px">Rompidos em ${fmtData(rompData)}</h2>
+  const dataRompidosTxt = (rompFiltroData && rompFiltroData!=='ATRASADOS') ? fmtData(rompFiltroData) : fmtData(hojeISO());
+  html += `<div style="margin-top:34px"><h2 style="font-size:19px;margin:0 0 4px">Rompidos em ${dataRompidosTxt}</h2>
     <p style="color:var(--muted);margin:0 0 16px;font-size:14px">Corpos de prova já rompidos nesta data, agrupados por dupla. Você pode corrigir as prensas e a observação (a idade fica travada).</p>`;
   if(!rompidosDia.length){
     html += '<div class="estado" style="padding:30px">Nenhum rompimento confirmado nesta data ainda.</div>';
@@ -527,7 +571,7 @@ async function confirmarRompimentos(){
   try{
     const { error } = await sb.from('rompimentos').insert(linhas);
     if(error) throw error;
-    rompData = hoje; // mostra os recém-rompidos na tabela de rompidos de hoje
+    rompFiltroData = hoje; // após romper, vê os rompidos de hoje
     await abaRomper();
     document.getElementById('wrap').insertAdjacentHTML('afterbegin',
       `<div class="card" style="text-align:center;border-color:#bcd2bf;background:#f3f9f4"><div style="font-size:34px">✓</div>
