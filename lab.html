@@ -82,7 +82,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const root = document.getElementById('root');
 let userEmail='';
 let abaAtual='programar';
-let perfilUsuario = null;
+let perfisUsuario = [];
+let nomeUsuario = '';
 const PERFIS_OK = ['admin','laboratorio']; // quem pode usar o app do laboratório
 
 // ---- helpers de data ----
@@ -900,10 +901,11 @@ async function iniciar(){
   root.innerHTML = '<div class="estado">Carregando…</div>';
   try{
     const { data:u } = await sb.auth.getUser();
-    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id).maybeSingle();
-    perfilUsuario = data ? data.perfil : null;
-  }catch(_){ perfilUsuario = null; }
-  if(!PERFIS_OK.includes(perfilUsuario)){ telaSemAcesso(); return; }
+    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id);
+    perfisUsuario = (data||[]).map(r=>r.perfil);
+    nomeUsuario = (data && data[0] && data[0].nome) || '';
+  }catch(_){ perfisUsuario = []; }
+  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(); return; }
   render();
 }
 function telaSemAcesso(){
@@ -911,7 +913,7 @@ function telaSemAcesso(){
     <div class="login-wrap"><div class="login-box" style="text-align:center">
       <div class="login-logo">GT&amp;ABC</div>
       <div class="login-tit">Sem acesso</div>
-      <div class="login-sub" style="margin-bottom:18px">O usuário ${userEmail} não tem permissão para o Laboratório${perfilUsuario?` (perfil atual: ${perfilUsuario})`:''}.<br>Fale com a administradora.</div>
+      <div class="login-sub" style="margin-bottom:18px">O usuário ${userEmail} não tem permissão para o Laboratório${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
       <button class="btn" onclick="sair()">Sair</button>
     </div></div>`;
 }

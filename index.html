@@ -107,7 +107,8 @@ const cache = { obras:[], elementos:[], concreteiras:[], motivos:[], pavsPorObra
 const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[], betoneiras:[], cur:null, concId:null, totalCP:0 };
 let tela = 'home';
 let userEmail = '';
-let perfilUsuario = null;
+let perfisUsuario = [];
+let nomeUsuario = '';
 const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretagem
 
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
@@ -461,10 +462,11 @@ async function iniciarApp(){
   // confere o crachá do usuário logado
   try{
     const { data:u } = await sb.auth.getUser();
-    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id).maybeSingle();
-    perfilUsuario = data ? data.perfil : null;
-  }catch(_){ perfilUsuario = null; }
-  if(!PERFIS_OK.includes(perfilUsuario)){ telaSemAcesso(); return; }
+    const { data } = await sb.from('app_usuarios').select('perfil,nome').eq('user_id', u.user.id);
+    perfisUsuario = (data||[]).map(r=>r.perfil);
+    nomeUsuario = (data && data[0] && data[0].nome) || '';
+  }catch(_){ perfisUsuario = []; }
+  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(); return; }
   screen.innerHTML = casca('Concretagem',{back:false});
   document.getElementById('body').innerHTML = '<div class="estado">Carregando dados…</div>';
   try{ await carregarCadastros(); verHome(); }
@@ -477,7 +479,7 @@ function telaSemAcesso(){
       <div class="login-tit">Sem acesso</div>
       <div class="login-sub">Este app é da equipe de concretagem.</div>
       <div class="login-card" style="text-align:center">
-        <div class="sub" style="margin-bottom:14px">O usuário <b>${userEmail}</b> não tem permissão de concretagem${perfilUsuario?` (perfil atual: ${perfilUsuario})`:''}.<br>Fale com a administradora.</div>
+        <div class="sub" style="margin-bottom:14px">O usuário <b>${userEmail}</b> não tem permissão de concretagem${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
         <button class="bigbtn" onclick="sair()">Sair</button>
       </div>
     </div>`;
