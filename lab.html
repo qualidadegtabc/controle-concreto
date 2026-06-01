@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laboratório · Controle de Concreto</title>
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFBEE; --card:#FFFEF8; --ink:#0E0E0E; --muted:#7A746A;
+  --line:#EAE2C6; --accent:#BD5D27; --accent-ink:#8E4319; --accent-soft:#F7E7D7;
+  --ok:#3F945A; --warn:#FAA21B; --bad:#B02A20; --head:#F1EFE7;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:"Montserrat",sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+.mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
+
+.topbar{background:var(--ink);color:#fff;padding:14px 26px;display:flex;align-items:center;gap:14px}
+.topbar .logo{font-weight:800;border:2px solid #fff;border-radius:8px;padding:4px 10px;font-size:14px;letter-spacing:.4px}
+.topbar .ttl{font-weight:700;font-size:17px}
+.topbar .co{font-size:12px;color:#cfc9bd}
+.topbar .right{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px;color:#cfc9bd}
+.topbar .sair{background:none;border:0;color:#fff;font-weight:700;font-size:13px;text-decoration:underline}
+
+.tabs{display:flex;gap:8px;padding:16px 26px 0;border-bottom:1px solid var(--line);background:#fff}
+.tab{padding:12px 22px;border:0;background:none;font-weight:700;font-size:15px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
+
+.wrap{max-width:1100px;margin:0 auto;padding:26px}
+.officehead h2{font-size:22px;margin:0 0 4px}
+.officehead p{color:var(--muted);margin:0 0 20px;font-size:14px}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.card .ch{font-weight:700;font-size:16px;margin-bottom:4px}
+.card .cs{color:var(--muted);font-size:13px;margin-bottom:14px}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:var(--head);text-align:left;padding:11px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#524d44;font-weight:700;border-bottom:1px solid var(--line)}
+td{padding:11px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+select,input{font-size:15px;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23BD5D27' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:34px}
+
+.btn{padding:13px 26px;border-radius:11px;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:15px}
+.btn:disabled{opacity:.6}
+.btn.ghost{background:#fff;color:var(--accent-ink);border:2px solid var(--accent)}
+.estado{text-align:center;color:var(--muted);padding:50px 20px;font-size:15px;line-height:1.6}
+.erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;padding:14px;font-size:14px;margin-bottom:16px}
+
+/* login */
+.login-wrap{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px}
+.login-box{width:100%;max-width:380px}
+.login-logo{font-weight:800;border:3px solid var(--ink);border-radius:12px;padding:10px 16px;font-size:22px;text-align:center;width:fit-content;margin:0 auto 10px}
+.login-tit{color:var(--accent);font-size:20px;font-weight:700;text-align:center}
+.login-sub{color:var(--muted);font-size:13px;text-align:center;margin-bottom:22px}
+.login-box label{display:block;font-size:13px;font-weight:700;margin:0 0 6px}
+.login-box input{width:100%;margin-bottom:14px;min-height:50px}
+.login-box .btn{width:100%}
+.chip{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border:1px solid #e3c3a6;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="root"><div class="estado">Carregando…</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
+const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+const root = document.getElementById('root');
+let userEmail='';
+let abaAtual='programar';
+
+// ---- helpers de data ----
+function addDiasISO(dataISO, dias){ const d=new Date(dataISO+'T00:00:00'); d.setDate(d.getDate()+(+dias)); return d.toISOString().slice(0,10); }
+function fmtData(iso){ if(!iso) return '—'; const[a,m,d]=iso.split('-'); return `${d}/${m}/${a}`; }
+
+// ---- LOGIN ----
+function telaLogin(msg){
+  root.innerHTML = `
+    <div class="login-wrap"><div class="login-box">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Laboratório</div>
+      <div class="login-sub">Controle Tecnológico de Concreto</div>
+      <label>E-mail</label><input id="li_email" type="email" autocapitalize="off" placeholder="seu@email.com">
+      <label>Senha</label><input id="li_senha" type="password" placeholder="••••••••">
+      ${msg?`<div class="erro">${msg}</div>`:''}
+      <button class="btn" id="li_btn" onclick="entrar()">Entrar</button>
+    </div></div>`;
+}
+async function entrar(){
+  const email=document.getElementById('li_email').value.trim();
+  const senha=document.getElementById('li_senha').value;
+  if(!email||!senha){ telaLogin('Preencha e-mail e senha.'); return; }
+  const btn=document.getElementById('li_btn'); btn.disabled=true; btn.textContent='Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({email,password:senha});
+  if(error){ telaLogin('Não consegui entrar: '+error.message); return; }
+  userEmail=data.user.email; iniciar();
+}
+async function sair(){ await sb.auth.signOut(); userEmail=''; telaLogin(''); }
+
+// ---- CASCA ----
+function casca(){
+  return `
+    <div class="topbar">
+      <div class="logo">GT&amp;ABC</div>
+      <div><div class="ttl">Laboratório</div><div class="co">Controle Tecnológico de Concreto</div></div>
+      <div class="right"><span>${userEmail}</span><button class="sair" onclick="sair()">Sair</button></div>
+    </div>
+    <div class="tabs">
+      <button class="tab ${abaAtual==='programar'?'on':''}" onclick="irAba('programar')">Programar idades</button>
+      <button class="tab ${abaAtual==='romper'?'on':''}" onclick="irAba('romper')">Romper</button>
+      <button class="tab ${abaAtual==='resultados'?'on':''}" onclick="irAba('resultados')">Resultados</button>
+    </div>
+    <div class="wrap" id="wrap"></div>`;
+}
+function irAba(a){ abaAtual=a; render(); }
+function render(){
+  root.innerHTML = casca();
+  if(abaAtual==='programar') abaProgramar();
+  else document.getElementById('wrap').innerHTML = `<div class="estado">Esta aba será construída em breve. 🔧</div>`;
+}
+
+// ---- PROGRAMAR IDADES ----
+let progGrupos=[], progEscolhas={};
+async function buscarParaProgramar(){
+  const { data, error } = await sb.from('corpos_prova')
+    .select('id,numero,idade_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagem_id,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome)))')
+    .is('idade_prevista', null).eq('descartado', false).order('numero',{ascending:true});
+  if(error) throw error;
+  const porBt={};
+  (data||[]).forEach(cp=>{
+    const b=cp.betoneiras, c=b.concretagens;
+    if(!porBt[b.id]) porBt[b.id]={betoneiraId:b.id,nf:b.nota_fiscal,fck:b.fck,obra:c.obras.nome,pav:c.pavimentos.nome,data:c.data_concretagem,cps:[]};
+    porBt[b.id].cps.push({id:cp.id,numero:cp.numero});
+  });
+  const grupos=Object.values(porBt);
+  grupos.forEach(g=>{ g.cps.sort((a,b)=>a.numero-b.numero); g.duplas=[]; for(let i=0;i<g.cps.length;i+=2) g.duplas.push(g.cps.slice(i,i+2)); });
+  grupos.sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:0);
+  return grupos;
+}
+async function abaProgramar(){
+  const wrap=document.getElementById('wrap');
+  wrap.innerHTML = `<div class="officehead"><h2>Programar idades</h2><p>Defina a idade de rompimento de cada dupla de corpos de prova. As duplas são formadas por nota fiscal.</p></div><div class="estado">Buscando corpos de prova…</div>`;
+  try{ progGrupos=await buscarParaProgramar(); progEscolhas={}; desenharProgramar(); }
+  catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+function desenharProgramar(){
+  const wrap=document.getElementById('wrap');
+  let html=`<div class="officehead"><h2>Programar idades</h2><p>Defina a idade de rompimento de cada dupla. As duplas são formadas por nota fiscal.</p></div>`;
+  if(!progGrupos.length){ wrap.innerHTML=html+'<div class="estado">Nenhum corpo de prova aguardando programação. 🎉</div>'; return; }
+  const idades=[3,4,7,28,63];
+  progGrupos.forEach(g=>{
+    html+=`<div class="card"><div class="ch">${g.obra} · ${g.pav}</div>
+      <div class="cs">NF ${g.nf} · Fck ${g.fck||'—'} · moldagem ${fmtData(g.data)}</div>
+      <table><thead><tr><th style="width:160px">Dupla (CP)</th><th style="width:200px">Idade</th><th>Data prevista</th></tr></thead><tbody>`;
+    g.duplas.forEach((d,di)=>{
+      const chave=g.betoneiraId+':'+di, nums=d.map(c=>c.numero).join(' e ');
+      const opts=idades.map(x=>`<option value="${x}" ${progEscolhas[chave]==x?'selected':''}>${x} dias</option>`).join('');
+      const prev = progEscolhas[chave]? fmtData(addDiasISO(g.data, progEscolhas[chave])) : '—';
+      html+=`<tr><td class="mono" style="font-weight:700">${nums}</td>
+        <td><select onchange="progEscolhas['${chave}']=+this.value;desenharProgramar()"><option value="" ${!progEscolhas[chave]?'selected':''} disabled>idade…</option>${opts}</select></td>
+        <td class="mono" id="prev_${chave.replace(':','_')}">${prev}</td></tr>`;
+    });
+    html+=`</tbody></table></div>`;
+  });
+  html+=`<button class="btn" onclick="salvarProgramacao()">Salvar programação</button>`;
+  wrap.innerHTML=html;
+}
+async function salvarProgramacao(){
+  const updates=[];
+  progGrupos.forEach(g=>g.duplas.forEach((d,di)=>{
+    const idade=progEscolhas[g.betoneiraId+':'+di];
+    if(idade){ const dp=addDiasISO(g.data,idade); d.forEach(cp=>updates.push({id:cp.id,idade_prevista:idade,data_prevista:dp})); }
+  }));
+  if(!updates.length){ alert('Escolha a idade de ao menos uma dupla.'); return; }
+  try{
+    const res=await Promise.all(updates.map(u=>sb.from('corpos_prova').update({idade_prevista:u.idade_prevista,data_prevista:u.data_prevista}).eq('id',u.id)));
+    for(const r of res) if(r.error) throw r.error;
+    const wrap=document.getElementById('wrap');
+    wrap.innerHTML=`<div class="officehead"><h2>Programar idades</h2></div>
+      <div class="card" style="text-align:center"><div style="font-size:44px">✓</div>
+      <div style="font-weight:700;font-size:18px;color:var(--ok);margin:6px 0">Idades programadas!</div>
+      <div class="cs">${updates.length} corpo(s) de prova com data de rompimento definida.</div>
+      <button class="btn" onclick="abaProgramar()" style="margin-top:8px">Programar mais</button></div>`;
+  }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui salvar.</b><br>'+(e.message||e)+'</div>'); }
+}
+
+// ---- INÍCIO ----
+function iniciar(){ render(); }
+(async function(){
+  const { data } = await sb.auth.getSession();
+  if(data.session){ userEmail=data.session.user.email; iniciar(); }
+  else telaLogin('');
+})();
+</script>
+</body>
+</html>
