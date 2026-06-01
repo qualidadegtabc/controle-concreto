@@ -129,6 +129,7 @@ function render(){
   root.innerHTML = casca();
   if(abaAtual==='programar') abaProgramar();
   else if(abaAtual==='romper') abaRomper();
+  else if(abaAtual==='resultados') abaResultados();
   else document.getElementById('wrap').innerHTML = `<div class="estado">Esta aba será construída em breve. 🔧</div>`;
 }
 
@@ -581,6 +582,168 @@ async function confirmarRompimentos(){
        <div style="font-weight:700;color:var(--ok)">${linhas.length} rompimento(s) confirmado(s)!</div></div>`);
   }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
 }
+
+// ================= ABA RESULTADOS =================
+let resLinhas = [];   // uma linha por DUPLA
+let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' };
+
+async function buscarResultados(){
+  // CPs (não descartados) com betoneira+concretagem+elemento+concreteira e rompimentos
+  const { data, error } = await sb.from('corpos_prova')
+    .select('id,numero,idade_prevista,data_prevista,descartado,betoneira_id,'+
+      'betoneiras!inner(id,nota_fiscal,lacre,fck,slump_medido,agua_adicionada,volume,aceita,'+
+        'concretagens!inner(data_concretagem,obras!inner(nome),pavimentos!inner(nome),elementos(nome),concreteiras(nome))),'+
+      'rompimentos(prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao)')
+    .eq('descartado', false)
+    .order('numero',{ascending:true});
+  if(error) throw error;
+  const cps=(data||[]).filter(cp=>cp.betoneiras && cp.betoneiras.aceita);
+  // agrupa CPs por betoneira
+  const porBt={};
+  cps.forEach(cp=>{
+    const b=cp.betoneiras;
+    if(!porBt[b.id]) porBt[b.id]={ bt:b, cps:[] };
+    porBt[b.id].cps.push(cp);
+  });
+  // forma duplas (por ordem de número, dentro da NF); cada dupla vira uma linha
+  const linhas=[];
+  Object.values(porBt).forEach(({bt,cps})=>{
+    const c=bt.concretagens;
+    cps.sort((a,b)=>a.numero-b.numero);
+    for(let i=0;i<cps.length;i+=2){
+      const par=cps.slice(i,i+2);
+      // rompimentos da dupla (pega de qualquer CP do par)
+      const romps=[];
+      par.forEach(cp=>(cp.rompimentos||[]).forEach(r=>romps.push(r)));
+      const temRomp=romps.length>0;
+      // idade: do rompimento (real) se houver, senão a prevista
+      const idade = temRomp ? romps[0].idade_real : (par[0].idade_prevista!=null?par[0].idade_prevista:null);
+      const dataRomp = temRomp ? romps[0].data_rompimento : null;
+      const obs = (romps.find(r=>r.observacao)||{}).observacao || null;
+      // resultado da dupla = maior MPa entre os CPs do par
+      let resultado=null;
+      romps.forEach(r=>{ const m=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null); if(m!=null&&(resultado==null||m>resultado)) resultado=m; });
+      // conformidade
+      let conf;
+      if(!temRomp) conf = (par[0].idade_prevista==null)?'a_programar':'aguardando';
+      else if(idade>=28) conf = (resultado>=(bt.fck||0))?'conforme':'nao';
+      else conf='parcial';
+      linhas.push({
+        cpLabel: par.map(p=>String(p.numero).padStart(3,'0')).join('·'),
+        obra:c.obras.nome, pav:c.pavimentos.nome,
+        elemento:(c.elementos&&c.elementos.nome)||'—', concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
+        nf:bt.nota_fiscal, lacre:bt.lacre||'—', fck:bt.fck,
+        slump:bt.slump_medido, agua:bt.agua_adicionada, volume:bt.volume,
+        moldagem:c.data_concretagem, idade, dataRomp, resultado, conf, obs,
+        datasRomp: dataRomp?[dataRomp]:[]
+      });
+    }
+  });
+  // ordena por moldagem desc, depois CP
+  linhas.sort((a,b)=> a.moldagem<b.moldagem?1:a.moldagem>b.moldagem?-1:(a.cpLabel<b.cpLabel?-1:1));
+  return linhas;
+}
+
+async function abaResultados(){
+  const wrap=document.getElementById('wrap');
+  wrap.innerHTML = `<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla de corpos de prova. Os filtros são cumulativos.</p></div><div class="estado">Carregando resultados…</div>`;
+  try{
+    resLinhas = await buscarResultados();
+    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' };
+    desenharResultados();
+  }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+
+// aplica todos os filtros exceto um (para montar as opções daquele de forma cumulativa)
+function resFiltrar(exceto){
+  return resLinhas.filter(l=>{
+    if(exceto!=='obra' && resFiltros.obra && l.obra!==resFiltros.obra) return false;
+    if(exceto!=='pav' && resFiltros.pav && l.pav!==resFiltros.pav) return false;
+    if(exceto!=='dataConc' && resFiltros.dataConc && l.moldagem!==resFiltros.dataConc) return false;
+    if(exceto!=='nf' && resFiltros.nf && String(l.nf)!==String(resFiltros.nf)) return false;
+    if(exceto!=='conf' && resFiltros.conf && l.conf!==resFiltros.conf) return false;
+    if(exceto!=='dataRomp' && resFiltros.dataRomp && !l.datasRomp.includes(resFiltros.dataRomp)) return false;
+    return true;
+  });
+}
+function opcoesDe(campo, exceto){
+  const base = resFiltrar(exceto);
+  const mapa={obra:'obra',pav:'pav',dataConc:'moldagem',nf:'nf'};
+  let vals;
+  if(campo==='dataRomp'){ vals=[...new Set(base.flatMap(l=>l.datasRomp))]; }
+  else { const k=mapa[campo]; vals=[...new Set(base.map(l=>l[k]).filter(v=>v!=null&&v!==''))]; }
+  return vals;
+}
+function setResFiltro(campo, v){
+  resFiltros[campo]=v;
+  if(campo==='obra') resFiltros.pav='';
+  desenharResultados();
+}
+function selFiltro(campo, label, valores, fmt){
+  const atual=resFiltros[campo];
+  let opts=`<option value="">${label}: todos</option>`;
+  valores.sort();
+  valores.forEach(v=>{ opts+=`<option value="${String(v).replace(/"/g,'&quot;')}" ${String(atual)===String(v)?'selected':''}>${fmt?fmt(v):v}</option>`; });
+  return `<div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${label}</label>
+    <select style="min-width:120px" onchange="setResFiltro('${campo}',this.value)">${opts}</select></div>`;
+}
+function badgeConf(s){
+  if(s==='conforme') return '<span class="badge b-ok">conforme</span>';
+  if(s==='nao') return '<span class="badge b-bad">não conf.</span>';
+  if(s==='parcial') return '<span class="badge b-mut">parcial</span>';
+  if(s==='a_programar') return '<span class="badge b-mut">a programar</span>';
+  return '<span class="badge b-mut">aguardando</span>';
+}
+function n1(v){ return v==null?'—':Number(v).toFixed(1); }
+
+function desenharResultados(){
+  const wrap=document.getElementById('wrap');
+  const lista = resFiltrar(null);
+  const filtros = [
+    selFiltro('obra','Obra', opcoesDe('obra','obra')),
+    selFiltro('pav','Pavimento', opcoesDe('pav','pav')),
+    selFiltro('dataConc','Concretagem', opcoesDe('dataConc','dataConc'), fmtData),
+    selFiltro('nf','NF', opcoesDe('nf','nf')),
+    selFiltro('conf','Conformidade', ['conforme','nao','parcial','aguardando','a_programar'], v=>({conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[v])),
+    selFiltro('dataRomp','Data rompim.', opcoesDe('dataRomp','dataRomp'), fmtData),
+  ].join('');
+
+  let html=`<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla. Os filtros são cumulativos — cada um refina o anterior.</p></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">${filtros}</div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      <button class="btn ghost" style="padding:8px 16px;font-size:13px" onclick="limparFiltrosRes()">Limpar filtros</button>
+      <span style="color:var(--muted);font-size:13px">${lista.length} dupla(s)</span>
+    </div>`;
+
+  if(!lista.length){ wrap.innerHTML=html+'<div class="estado">Nenhum resultado para os filtros selecionados.</div>'; return; }
+
+  html += `<div class="card" style="padding:0;overflow-x:auto">
+    <table style="min-width:1500px;font-size:13px"><thead><tr>
+      <th style="width:78px">CP</th><th>Obra</th><th>Pav</th><th>Elemento</th><th>Concreteira</th>
+      <th style="width:70px">NF</th><th style="width:70px">Lacre</th><th style="width:55px">Fck</th>
+      <th style="width:60px">Slump</th><th style="width:55px">Água</th><th style="width:55px">Vol</th>
+      <th style="width:95px">Moldagem</th><th style="width:50px">Idade</th><th style="width:95px">Rompim.</th>
+      <th style="width:75px">Result.</th><th style="width:95px">Conf.</th><th style="width:120px">Obs</th>
+    </tr></thead><tbody>`;
+  lista.forEach(l=>{
+    const naoConf = l.conf==='nao';
+    html += `<tr ${naoConf?'style="background:#fdf1ee"':''}>
+      <td><span class="cpchip" style="font-size:14px;padding:6px 9px;min-width:auto">${l.cpLabel}</span></td>
+      <td>${l.obra}</td><td style="font-size:12px">${l.pav}</td>
+      <td style="font-size:12px">${l.elemento}</td><td style="font-size:12px">${l.concreteira}</td>
+      <td class="mono">${l.nf}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
+      <td class="mono">${n1(l.slump)}</td><td class="mono">${n1(l.agua)}</td><td class="mono">${n1(l.volume)}</td>
+      <td class="mono">${fmtData(l.moldagem)}</td><td class="mono">${l.idade!=null?l.idade+'d':'—'}</td>
+      <td class="mono">${l.dataRomp?fmtData(l.dataRomp):'—'}</td>
+      <td class="mono"><b>${n1(l.resultado)}</b></td>
+      <td>${badgeConf(l.conf)}</td>
+      <td style="font-size:12px">${l.obs||'<span class="muted">—</span>'}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  wrap.innerHTML = html;
+}
+function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' }; desenharResultados(); }
 
 // ---- INÍCIO ----
 function iniciar(){ render(); }
