@@ -4,6 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Controle Tecnológico de Concreto</title>
+
+  <!-- liga o manifesto (identidade do app) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#BD5D27">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
   <style>
     body{margin:0;font-family:system-ui,sans-serif;background:#FFFBEE;color:#0E0E0E;
          display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -18,5 +24,14 @@
   <div class="logo">GT&amp;ABC</div>
   <h1>Controle Tecnológico de Concreto</h1>
   <p>Está no ar! 🎉 Esta é a página de teste. Em breve, o aplicativo de verdade.</p>
+
+  <!-- liga o service worker (funcionar offline) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js');
+      });
+    }
+  </script>
 </body>
 </html>
