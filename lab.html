@@ -73,6 +73,8 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 <div id="root"><div class="estado">Carregando…</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script>
 const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
@@ -641,7 +643,7 @@ async function descartarLiberados(){
 
 // ================= ABA RESULTADOS =================
 let resLinhas = [];   // uma linha por DUPLA
-let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' };
+let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' };
 
 async function buscarResultados(){
   // CPs (não descartados) com betoneira+concretagem+elemento+concreteira e rompimentos
@@ -705,7 +707,7 @@ async function abaResultados(){
   wrap.innerHTML = `<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla de corpos de prova. Os filtros são cumulativos.</p></div><div class="estado">Carregando resultados…</div>`;
   try{
     resLinhas = await buscarResultados();
-    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' };
+    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' };
     desenharResultados();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
@@ -718,13 +720,14 @@ function resFiltrar(exceto){
     if(exceto!=='dataConc' && resFiltros.dataConc && l.moldagem!==resFiltros.dataConc) return false;
     if(exceto!=='nf' && resFiltros.nf && String(l.nf)!==String(resFiltros.nf)) return false;
     if(exceto!=='conf' && resFiltros.conf && l.conf!==resFiltros.conf) return false;
+    if(exceto!=='idade' && resFiltros.idade && String(l.idade)!==String(resFiltros.idade)) return false;
     if(exceto!=='dataRomp' && resFiltros.dataRomp && !l.datasRomp.includes(resFiltros.dataRomp)) return false;
     return true;
   });
 }
 function opcoesDe(campo, exceto){
   const base = resFiltrar(exceto);
-  const mapa={obra:'obra',pav:'pav',dataConc:'moldagem',nf:'nf'};
+  const mapa={obra:'obra',pav:'pav',dataConc:'moldagem',nf:'nf',idade:'idade'};
   let vals;
   if(campo==='dataRomp'){ vals=[...new Set(base.flatMap(l=>l.datasRomp))]; }
   else { const k=mapa[campo]; vals=[...new Set(base.map(l=>l[k]).filter(v=>v!=null&&v!==''))]; }
@@ -738,7 +741,7 @@ function setResFiltro(campo, v){
 function selFiltro(campo, label, valores, fmt){
   const atual=resFiltros[campo];
   let opts=`<option value="">${label}: todos</option>`;
-  valores.sort();
+  valores.sort((a,b)=>{ const na=Number(a), nb=Number(b); if(!isNaN(na)&&!isNaN(nb)) return na-nb; return String(a)<String(b)?-1:String(a)>String(b)?1:0; });
   valores.forEach(v=>{ opts+=`<option value="${String(v).replace(/"/g,'&quot;')}" ${String(atual)===String(v)?'selected':''}>${fmt?fmt(v):v}</option>`; });
   return `<div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${label}</label>
     <select style="min-width:120px" onchange="setResFiltro('${campo}',this.value)">${opts}</select></div>`;
@@ -761,13 +764,15 @@ function desenharResultados(){
     selFiltro('dataConc','Concretagem', opcoesDe('dataConc','dataConc'), fmtData),
     selFiltro('nf','NF', opcoesDe('nf','nf')),
     selFiltro('conf','Conformidade', ['conforme','nao','parcial','aguardando','a_programar'], v=>({conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[v])),
+    selFiltro('idade','Idade', opcoesDe('idade','idade'), v=>v+' dias'),
     selFiltro('dataRomp','Data rompim.', opcoesDe('dataRomp','dataRomp'), fmtData),
   ].join('');
 
   let html=`<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla. Os filtros são cumulativos — cada um refina o anterior.</p></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">${filtros}</div>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn ghost" style="padding:8px 16px;font-size:13px" onclick="limparFiltrosRes()">Limpar filtros</button>
+      <button class="btn" style="padding:8px 18px;font-size:13px" onclick="exportarResultadosPDF()">Exportar PDF</button>
       <span style="color:var(--muted);font-size:13px">${lista.length} dupla(s)</span>
     </div>`;
 
@@ -802,7 +807,91 @@ function desenharResultados(){
   html += `</tbody></table></div></div>`;
   wrap.innerHTML = html;
 }
-function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', dataRomp:'' }; desenharResultados(); }
+function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' }; desenharResultados(); }
+
+function nomeConf(s){ return {conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[s]||s; }
+function resumoFiltrosTxt(){
+  const p=[];
+  if(resFiltros.obra) p.push('Obra: '+resFiltros.obra);
+  if(resFiltros.pav) p.push('Pavimento: '+resFiltros.pav);
+  if(resFiltros.dataConc) p.push('Concretagem: '+fmtData(resFiltros.dataConc));
+  if(resFiltros.nf) p.push('NF: '+resFiltros.nf);
+  if(resFiltros.conf) p.push('Conformidade: '+nomeConf(resFiltros.conf));
+  if(resFiltros.idade) p.push('Idade: '+resFiltros.idade+' dias');
+  if(resFiltros.dataRomp) p.push('Rompimento: '+fmtData(resFiltros.dataRomp));
+  return p.length ? p.join('   ·   ') : 'Todos os registros (sem filtro)';
+}
+function exportarResultadosPDF(){
+  if(!window.jspdf || !window.jspdf.jsPDF){ alert('A biblioteca de PDF não carregou. Verifique a conexão e recarregue a página.'); return; }
+  const lista = resFiltrar(null);
+  if(!lista.length){ alert('Não há resultados para exportar com os filtros atuais.'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const accent=[189,93,39], ink=[14,14,14], muted=[122,116,106];
+  const hoje = new Date();
+  const dataGer = String(hoje.getDate()).padStart(2,'0')+'/'+String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+
+  // ---- cabeçalho ----
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(ink[0],ink[1],ink[2]);
+  doc.text('GT&ABC · Controle Tecnológico de Concreto', 10, 14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
+  doc.text('Relatório de Resultados', 10, 20);
+  doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]);
+  doc.text('Gerado em '+dataGer, pageW-10, 14, {align:'right'});
+
+  // ---- filtros + resumo ----
+  doc.setFontSize(8); doc.setTextColor(ink[0],ink[1],ink[2]);
+  doc.text('Filtros: '+resumoFiltrosTxt(), 10, 26);
+  const nConf=lista.filter(l=>l.conf==='conforme').length;
+  const nNao =lista.filter(l=>l.conf==='nao').length;
+  const nParc=lista.filter(l=>l.conf==='parcial').length;
+  doc.setTextColor(muted[0],muted[1],muted[2]);
+  doc.text(lista.length+' dupla(s)   ·   '+nConf+' conforme   ·   '+nNao+' não conforme   ·   '+nParc+' parcial', 10, 31);
+
+  // ---- tabela ----
+  const head=[['CP','Obra','Pav','Elemento','Concreteira','NF','Lacre','Fck (MPa)','Slump (cm)','Água (L)','Vol (m³)','Moldagem','Idade','Rompim.','Result. (MPa)','Conf.','Obs']];
+  const body=lista.map(l=>[
+    l.cpLabel, l.obra, l.pav, l.elemento, l.concreteira, String(l.nf), String(l.lacre),
+    l.fck||'—', n1(l.slump), n1(l.agua), n1(l.volume),
+    fmtData(l.moldagem), (l.idade!=null?l.idade+'d':'—'),
+    (l.dataRomp?fmtData(l.dataRomp):'—'), n1(l.resultado), nomeConf(l.conf), (l.obs||'—')
+  ]);
+
+  doc.autoTable({
+    head, body, startY:35, theme:'grid',
+    styles:{ font:'helvetica', fontSize:7, cellPadding:1.6, overflow:'linebreak', lineColor:[234,226,198], lineWidth:0.1, textColor:[14,14,14] },
+    headStyles:{ fillColor:accent, textColor:[255,255,255], fontStyle:'bold', fontSize:7, halign:'left' },
+    alternateRowStyles:{ fillColor:[255,253,244] },
+    columnStyles:{
+      0:{cellWidth:17, fontStyle:'bold'},
+      5:{cellWidth:13}, 6:{cellWidth:13},
+      7:{halign:'right',cellWidth:13}, 8:{halign:'right',cellWidth:13}, 9:{halign:'right',cellWidth:12}, 10:{halign:'right',cellWidth:12},
+      12:{halign:'center',cellWidth:10}, 14:{halign:'right',fontStyle:'bold',cellWidth:14}
+    },
+    margin:{left:10, right:10},
+    didParseCell:(d)=>{
+      const row = lista[d.row.index];
+      if(d.section==='body' && row){
+        if(row.conf==='nao') d.cell.styles.fillColor=[253,241,238];
+        if(d.column.index===15){
+          if(row.conf==='conforme'){ d.cell.styles.textColor=[63,148,90]; d.cell.styles.fontStyle='bold'; }
+          else if(row.conf==='nao'){ d.cell.styles.textColor=[176,42,32]; d.cell.styles.fontStyle='bold'; }
+          else { d.cell.styles.textColor=[122,116,106]; }
+        }
+      }
+    },
+    didDrawPage:()=>{
+      const ph=doc.internal.pageSize.getHeight();
+      doc.setFontSize(7); doc.setTextColor(muted[0],muted[1],muted[2]); doc.setFont('helvetica','normal');
+      doc.text('GT Home & ABC — Controle Tecnológico de Concreto', 10, ph-6);
+      doc.text('Página '+doc.internal.getNumberOfPages(), pageW-10, ph-6, {align:'right'});
+    }
+  });
+
+  doc.save('resultados_concreto_'+hoje.toISOString().slice(0,10)+'.pdf');
+}
 
 // ---- INÍCIO ----
 function iniciar(){ render(); }
