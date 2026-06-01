@@ -344,7 +344,7 @@ async function garantirConcretagem(){
   const hoje = new Date().toISOString().slice(0,10);
   const { data, error } = await sb.from('concretagens').insert({
     obra_id:draft.obraId, pavimento_id:draft.pavId, elemento_id:draft.elementoId,
-    concreteira_id:draft.concreteiraId, data_concretagem:hoje, responsavel:userEmail
+    concreteira_id:draft.concreteiraId, data_concretagem:hoje, responsavel:userEmail, responsavel_nome:nomeUsuario||null
   }).select().single();
   if(error) throw error;
   draft.concId = data.id;
@@ -359,6 +359,7 @@ async function gravarBetoneiraAtual(){
   const { data:bet, error:e2 } = await sb.from('betoneiras').insert({
     concretagem_id:concId, fck:num(t.fck), nota_fiscal:String(b.nf),
     lacre:b.lacre||null, hora_chegada:b.hora||null, slump_medido:num(b.slump),
+    slump_especificado:num(t.slump), tolerancia:num(t.tol), traco_descricao:(t.desc||null),
     agua_adicionada:num(b.agua)||0, volume:num(b.volume)||0,
     aceita:b.aceita, motivo_recusa_id:b.aceita?null:b.motivoId, observacao:b.obs||null
   }).select().single();
@@ -446,7 +447,7 @@ async function verResumoFinal(){
         Registrado por: ${userEmail}
       </div>
     </div>
-    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:4px">Agora colete a assinatura do responsável que recebeu o concreto — ou deixe pra depois (fica em "Pendentes de coleta de assinatura").</div>`;
+    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:4px">Agora colete a ciência do responsável da engenharia que acompanhou a concretagem — ou deixe pra depois (fica em "Pendentes de coleta de assinatura").</div>`;
   // marca a concretagem como finalizada no banco
   if(draft.concId){
     try{ await sb.from('concretagens').update({finalizada:true, finalizada_em:new Date().toISOString()}).eq('id', draft.concId); }catch(_){}
@@ -462,14 +463,15 @@ async function verResumoFinal(){
 function telaAssinatura(concId, titulo, origem){
   assinaturaCtx = { concId, titulo, origem };
   tela='assinatura';
-  screen.innerHTML = casca('Coletar assinatura', {back:false});
+  screen.innerHTML = casca('Ciência do responsável', {back:false});
   const body=document.getElementById('body'), foot=document.getElementById('foot');
   body.innerHTML = `
     <div class="sub" style="margin:-2px 0 14px"><b>${titulo}</b></div>
-    <div class="row"><label class="fld">Nome de quem assina (responsável)</label>
-      <input id="ass_nome" placeholder="nome do responsável na obra"></div>
+    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-bottom:14px">Ciência do responsável da engenharia que acompanhou a concretagem — confirma estar ciente de tudo que foi registrado.</div>
+    <div class="row"><label class="fld">Nome do responsável da engenharia</label>
+      <input id="ass_nome" placeholder="nome de quem acompanhou"></div>
     <div class="fldlabel">Assinatura</div>
-    <div class="sub" style="font-size:12.5px;margin:-2px 0 8px">Peça ao responsável para assinar com o dedo na área abaixo.</div>
+    <div class="sub" style="font-size:12.5px;margin:-2px 0 8px">Peça ao responsável da engenharia para assinar com o dedo na área abaixo.</div>
     <canvas id="sigpad" style="width:100%;height:200px;background:#fff;border:1.5px dashed var(--accent);border-radius:14px;touch-action:none;display:block"></canvas>
     <button class="bigbtn ghost" style="margin-top:10px" onclick="window._sigClear&&window._sigClear()">Limpar</button>`;
   foot.style.display='';
@@ -576,7 +578,7 @@ async function verPendentes(){
 // ---------- RESUMO / DETALHE DE UMA CONCRETAGEM ----------
 async function buscarConcretagemDetalhe(concId){
   const { data, error } = await sb.from('concretagens')
-    .select('id,data_concretagem,responsavel,assinado,assinante_nome,assinatura_img,assinado_em,obras!inner(nome),pavimentos!inner(nome),elementos(nome),concreteiras(nome),betoneiras(id,nota_fiscal,lacre,hora_chegada,fck,slump_medido,agua_adicionada,volume,aceita,observacao,motivos_recusa(nome),corpos_prova(numero))')
+    .select('id,data_concretagem,responsavel,responsavel_nome,assinado,assinante_nome,assinatura_img,assinado_em,obras!inner(nome),pavimentos!inner(nome),elementos(nome),concreteiras(nome),betoneiras(id,nota_fiscal,lacre,hora_chegada,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,aceita,observacao,motivos_recusa(nome),corpos_prova(numero))')
     .eq('id', concId).single();
   if(error) throw error;
   return data;
@@ -609,27 +611,44 @@ function renderResumoConcretagem(d){
       ${b.observacao?`<div class="sub" style="margin-top:3px">Obs: ${b.observacao}</div>`:''}
     </div>`;
   }).join('');
+  const tracos = agruparTracos(bts);
+  const tracosHtml = tracos.map(g=>{
+    const lbl = `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · slump ${g.slump}±${g.tol!=null?g.tol:'?'} cm`:''}${g.desc?` · ${g.desc}`:''}`;
+    return `<div style="border-top:1px solid var(--line);padding:8px 0">
+      <div style="font-weight:600">${lbl}</div>
+      <div class="sub" style="margin-top:2px">${g.bt} betoneira(s) · ${g.vol.toFixed(1)} m³ · ${g.cp} CP</div></div>`;
+  }).join('');
   const assinaturaBloco = d.assinado
-    ? `<div class="tcard"><b>Assinatura</b>
-        <div class="sub" style="margin-top:6px">Recebido por <b>${d.assinante_nome||'—'}</b>${d.assinado_em?` · ${fmtData(d.assinado_em)}`:''}</div>
+    ? `<div class="tcard"><b>Ciência do responsável da engenharia</b>
+        <div class="sub" style="margin-top:6px">Ciente: <b>${d.assinante_nome||'—'}</b>${d.assinado_em?` · ${fmtData(d.assinado_em)}`:''}</div>
         ${d.assinatura_img?`<img src="${d.assinatura_img}" alt="assinatura" style="margin-top:8px;width:100%;max-width:280px;height:90px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:10px;display:block">`:''}
       </div>`
-    : `<div class="tcard" style="border-style:dashed"><b>Assinatura pendente</b>
-        <div class="sub" style="margin-top:6px">Esta concretagem ainda não foi assinada.</div></div>`;
+    : `<div class="tcard" style="border-style:dashed"><b>Ciência pendente</b>
+        <div class="sub" style="margin-top:6px">O responsável da engenharia ainda não assinou a ciência.</div></div>`;
   body.innerHTML = `
     <div style="font-weight:700;font-size:18px">${d.obras.nome} · ${d.pavimentos.nome}</div>
-    <div class="sub" style="margin:4px 0 14px">${fmtData(d.data_concretagem)} · ${(d.elementos&&d.elementos.nome)||'—'} · ${(d.concreteiras&&d.concreteiras.nome)||'—'} · por ${d.responsavel||'—'}</div>
+    <div class="sub" style="margin:4px 0 14px">${fmtData(d.data_concretagem)} · ${(d.elementos&&d.elementos.nome)||'—'} · ${(d.concreteiras&&d.concreteiras.nome)||'—'} · por ${d.responsavel_nome||d.responsavel||'—'}</div>
     <div class="tcard"><b>Resumo</b>
       <div class="sub" style="margin-top:6px;line-height:1.7">
         Betoneiras: <b>${bts.length}</b> (${aceitas.length} aceita(s)${recusadas.length?', '+recusadas.length+' recusa(s)':''})<br>
         Corpos de prova: <b>${totalCP}</b> · Volume aceito: <b>${volTotal.toFixed(1)} m³</b>
       </div>
-      ${linhas}
     </div>
+    <div class="tcard"><b>Traços</b>${tracosHtml||'<div class="sub" style="margin-top:6px">—</div>'}</div>
+    <div class="tcard"><b>Betoneiras</b>${linhas}</div>
     ${assinaturaBloco}`;
   foot.style.display='';
-  const btnSign = d.assinado ? '' : `<button class="bigbtn ghost" onclick="telaAssinatura(${d.id},'${(d.obras.nome+' · '+d.pavimentos.nome).replace(/'/g,'')}','detalhe')">Coletar assinatura</button>`;
+  const btnSign = d.assinado ? '' : `<button class="bigbtn ghost" onclick="telaAssinatura(${d.id},'${(d.obras.nome+' · '+d.pavimentos.nome).replace(/'/g,'')}','detalhe')">Coletar ciência</button>`;
   foot.innerHTML = `<button class="bigbtn" onclick="exportarConcretagemPDF()">Exportar PDF</button>${btnSign}`;
+}
+function agruparTracos(bts){
+  const map={};
+  (bts||[]).forEach(b=>{
+    const key=[b.fck, b.slump_especificado, b.tolerancia, b.traco_descricao||''].join('|');
+    if(!map[key]) map[key]={ fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, bt:0, vol:0, cp:0 };
+    const g=map[key]; g.bt++; if(b.aceita){ g.vol+=(Number(b.volume)||0); g.cp+=((b.corpos_prova||[]).length); }
+  });
+  return Object.values(map);
 }
 
 // ---------- PDF DA CONCRETAGEM ----------
@@ -654,7 +673,7 @@ function exportarConcretagemPDF(){
   const info = [
     ['Obra', d.obras.nome], ['Pavimento', d.pavimentos.nome],
     ['Elemento', (d.elementos&&d.elementos.nome)||'—'], ['Concreteira', (d.concreteiras&&d.concreteiras.nome)||'—'],
-    ['Data', fmtData(d.data_concretagem)], ['Responsável', d.responsavel||'—']
+    ['Data', fmtData(d.data_concretagem)], ['Responsável', d.responsavel_nome||d.responsavel||'—']
   ];
   doc.autoTable({
     body: info.map(r=>[{content:r[0],styles:{fontStyle:'bold',cellWidth:36}}, r[1]]),
@@ -667,6 +686,25 @@ function exportarConcretagemPDF(){
   const totalCP=bts.reduce((s,b)=>s+((b.corpos_prova||[]).length),0);
   const volTotal=aceitas.reduce((s,b)=>s+(Number(b.volume)||0),0);
 
+  // ----- Traços (antes da tabela de betoneiras) -----
+  const tracos = agruparTracos(bts);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
+  doc.text('Traços', 14, doc.lastAutoTable.finalY + 6);
+  doc.autoTable({
+    head:[['Traço','Betoneiras','Volume (m³)','CPs']],
+    body: tracos.map(g=>[
+      `Fck ${g.fck!=null?g.fck:'—'}${g.slump!=null?` · slump ${g.slump}±${g.tol!=null?g.tol:'?'} cm`:''}${g.desc?` · ${g.desc}`:''}`,
+      String(g.bt), g.vol.toFixed(1), String(g.cp)
+    ]),
+    startY: doc.lastAutoTable.finalY + 9, theme:'grid',
+    styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',lineColor:[234,226,198],lineWidth:0.1,textColor:[14,14,14]},
+    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+    columnStyles:{ 1:{halign:'center',cellWidth:24}, 2:{halign:'right',cellWidth:28}, 3:{halign:'center',cellWidth:18} },
+    margin:{left:14,right:14}
+  });
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
+  doc.text('Betoneiras', 14, doc.lastAutoTable.finalY + 6);
   const head=[['NF','Lacre','Hora','Fck','Slump (cm)','Água (L)','Vol (m³)','Aceite','Motivo','CPs']];
   const linhasPdf=bts.map(b=>{
     const cps=(b.corpos_prova||[]).map(c=>c.numero).sort((x,y)=>x-y).join(' ');
@@ -676,7 +714,7 @@ function exportarConcretagemPDF(){
       b.aceita?'—':((b.motivos_recusa&&b.motivos_recusa.nome)||'—'), b.aceita?(cps||'—'):'—' ];
   });
   doc.autoTable({
-    head, body:linhasPdf, startY: doc.lastAutoTable.finalY + 4, theme:'grid',
+    head, body:linhasPdf, startY: doc.lastAutoTable.finalY + 9, theme:'grid',
     styles:{font:'helvetica',fontSize:7.5,cellPadding:1.5,overflow:'linebreak',lineColor:[234,226,198],lineWidth:0.1,textColor:[14,14,14]},
     headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
     columnStyles:{ 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}, 6:{halign:'right'} },
@@ -690,14 +728,14 @@ function exportarConcretagemPDF(){
 
   y += 14;
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(muted[0],muted[1],muted[2]);
-  doc.text('Recebido por:', 14, y);
+  doc.text('Ciente — responsável da engenharia:', 14, y);
   if(d.assinado){
     doc.setTextColor(ink[0],ink[1],ink[2]); doc.setFont('helvetica','bold');
-    doc.text((d.assinante_nome||'—')+(d.assinado_em?`    ·    ${fmtData(d.assinado_em)}`:''), 42, y);
-    if(d.assinatura_img){ try{ doc.addImage(d.assinatura_img, 'PNG', 14, y+5, 80, 30); }catch(_){ } }
-    doc.setDrawColor(170); doc.line(14, y+37, 94, y+37);
+    doc.text((d.assinante_nome||'—')+(d.assinado_em?`    ·    ${fmtData(d.assinado_em)}`:''), 14, y+6);
+    if(d.assinatura_img){ try{ doc.addImage(d.assinatura_img, 'PNG', 14, y+9, 80, 30); }catch(_){ } }
+    doc.setDrawColor(170); doc.line(14, y+41, 94, y+41);
   } else {
-    doc.text('assinatura pendente', 42, y);
+    doc.setFont('helvetica','bold'); doc.text('ciência pendente', 14, y+6);
   }
 
   const ph=doc.internal.pageSize.getHeight();
@@ -733,6 +771,7 @@ async function iniciarApp(){
       const { data, error } = await sb.rpc('meus_perfis');
       if(error) _erroCracha = error.message;
       else perfisUsuario = Array.isArray(data) ? data : [];
+      try{ const rn = await sb.rpc('meu_nome'); if(!rn.error && rn.data) nomeUsuario = rn.data; }catch(_){}
     }
   }catch(e){ _erroCracha = (e && e.message) ? e.message : String(e); }
   if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(_erroCracha); return; }
