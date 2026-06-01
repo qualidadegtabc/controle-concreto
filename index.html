@@ -68,6 +68,9 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .ar.on-r{border-color:var(--bad);background:#fde8e2;color:var(--bad)}
 .chipbtn{min-width:54px;padding:12px 16px;border-radius:11px;border:2px solid var(--line);background:#fff;font-weight:700;font-size:15px;color:var(--ink)}
 .chipbtn.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.cpnums{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;margin-top:6px}
+.cpnum{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:18px;background:var(--accent-soft);
+  color:var(--accent-ink);border:1.5px solid #e3c3a6;border-radius:10px;padding:10px 14px;min-width:48px;text-align:center}
 .hello{font-weight:700;font-size:20px;margin:6px 0 4px}
 .sub{font-size:13px;color:var(--muted)}
 .fldlabel{font-size:13.5px;font-weight:700;color:#2a2a27;margin:18px 0 8px}
@@ -101,7 +104,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const screen = document.getElementById('screen');
 
 const cache = { obras:[], elementos:[], concreteiras:[], motivos:[], pavsPorObra:{} };
-const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[], betoneiras:[], cur:null };
+const draft = { obraId:null, obraNome:null, pavId:null, pavNome:null, elementoId:null, concreteiraId:null, tracos:[], betoneiras:[], cur:null, concId:null, totalCP:0 };
 let tela = 'home';
 let userEmail = '';
 
@@ -249,6 +252,8 @@ function iniciar(){
   // só mantém traços com Fck preenchido
   draft.tracos = draft.tracos.filter(t=>String(t.fck).trim());
   draft.betoneiras = [];
+  draft.concId = null;
+  draft.totalCP = 0;
   draft.cur = novaBetoneira();
   telaBetoneira();
 }
@@ -321,91 +326,131 @@ function validarBetoneira(){
   else { if(!c.motivoId){ alert('Selecione o motivo da recusa.'); return false; } }
   return true;
 }
-function proximaBetoneira(){
+
+const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
+
+// garante que a concretagem existe no banco (cria na 1ª vez)
+async function garantirConcretagem(){
+  if(draft.concId) return draft.concId;
+  const hoje = new Date().toISOString().slice(0,10);
+  const { data, error } = await sb.from('concretagens').insert({
+    obra_id:draft.obraId, pavimento_id:draft.pavId, elemento_id:draft.elementoId,
+    concreteira_id:draft.concreteiraId, data_concretagem:hoje, responsavel:userEmail
+  }).select().single();
+  if(error) throw error;
+  draft.concId = data.id;
+  return data.id;
+}
+
+// grava a betoneira atual + CPs; devolve {numeros:[...], recusada:bool}
+async function gravarBetoneiraAtual(){
+  const b = draft.cur;
+  const t = draft.tracos[b.tracoIdx]||{};
+  const concId = await garantirConcretagem();
+  const { data:bet, error:e2 } = await sb.from('betoneiras').insert({
+    concretagem_id:concId, fck:num(t.fck), nota_fiscal:String(b.nf),
+    lacre:b.lacre||null, hora_chegada:b.hora||null, slump_medido:num(b.slump),
+    agua_adicionada:num(b.agua)||0, volume:num(b.volume)||0,
+    aceita:b.aceita, motivo_recusa_id:b.aceita?null:b.motivoId, observacao:b.obs||null
+  }).select().single();
+  if(e2) throw e2;
+  let numeros=[];
+  if(b.aceita && b.cpQtd>0){
+    const linhas = Array.from({length:b.cpQtd}).map(()=>({ betoneira_id:bet.id }));
+    const { data:cps, error:e3 } = await sb.from('corpos_prova').insert(linhas).select('numero');
+    if(e3) throw e3;
+    numeros = cps.map(c=>c.numero).sort((a,b)=>a-b);
+    draft.totalCP += numeros.length;
+  }
+  b.salva=true;
+  draft.betoneiras.push(b);
+  return { numeros, recusada:!b.aceita, nf:b.nf };
+}
+
+// ação dos botões: grava e mostra confirmação
+async function gravarESeguir(modo){ // modo: 'proxima' | 'finalizar'
   if(!validarBetoneira()) return;
-  draft.betoneiras.push(draft.cur);
+  const foot=document.getElementById('foot');
+  const orig = foot.innerHTML;
+  foot.innerHTML = `<button class="bigbtn" disabled>Gravando…</button>`;
+  try{
+    const r = await gravarBetoneiraAtual();
+    telaConfirmaBetoneira(r, modo);
+  }catch(e){
+    foot.innerHTML = orig;
+    const body=document.getElementById('body');
+    body.insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar a betoneira.</b><br>'+(e&&e.message?e.message:e)+'</div>');
+    window.scrollTo(0,0);
+  }
+}
+function proximaBetoneira(){ gravarESeguir('proxima'); }
+function finalizar(){ gravarESeguir('finalizar'); }
+
+// telinha de confirmação após gravar a betoneira
+function telaConfirmaBetoneira(r, modo){
+  tela='confirmaBt';
+  screen.innerHTML = casca('Betoneira registrada', {back:false});
+  const body=document.getElementById('body'), foot=document.getElementById('foot');
+  let bloco;
+  if(r.recusada){
+    bloco = `<div style="font-size:42px">⊘</div>
+      <div style="font-weight:700;font-size:18px;margin:6px 0 2px;color:var(--bad)">NF ${r.nf} recusada</div>
+      <div class="sub">Nenhum corpo de prova moldado nesta betoneira.</div>`;
+  } else {
+    bloco = `<div style="font-size:42px">✓</div>
+      <div style="font-weight:700;font-size:18px;margin:6px 0 2px;color:var(--ok)">NF ${r.nf} registrada</div>
+      <div class="sub" style="margin-bottom:10px">Anote estes números nos corpos de prova:</div>
+      <div class="cpnums">${r.numeros.map(n=>`<span class="cpnum">${n}</span>`).join('')}</div>`;
+  }
+  body.innerHTML = `<div style="text-align:center;padding:14px 6px">${bloco}</div>`;
+  foot.style.display='';
+  if(modo==='finalizar'){
+    foot.innerHTML = `<button class="bigbtn" onclick="verResumoFinal()">Ver resumo da concretagem ▸</button>`;
+  } else {
+    foot.innerHTML = `<button class="bigbtn" onclick="novaBetoneiraNaTela()">Próxima betoneira ▸</button>
+      <button class="bigbtn ghost" onclick="verResumoFinal()">Encerrar concretagem</button>`;
+  }
+}
+function novaBetoneiraNaTela(){
+  const ultimo = draft.betoneiras[draft.betoneiras.length-1];
   draft.cur = novaBetoneira();
-  draft.cur.tracoIdx = draft.betoneiras[draft.betoneiras.length-1].tracoIdx; // mantém o último traço
+  if(ultimo) draft.cur.tracoIdx = ultimo.tracoIdx;
   telaBetoneira();
 }
 
-// ---------- GRAVAÇÃO NO BANCO ----------
-async function finalizar(){
-  if(!validarBetoneira()) return;
-  draft.betoneiras.push(draft.cur);
-  draft.cur=null;
-
-  const foot=document.getElementById('foot');
-  foot.innerHTML = `<button class="bigbtn" disabled>Gravando…</button>`;
-  const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
-
-  try{
-    // 1) concretagem
-    const hoje = new Date().toISOString().slice(0,10);
-    const { data:conc, error:e1 } = await sb.from('concretagens').insert({
-      obra_id:draft.obraId, pavimento_id:draft.pavId, elemento_id:draft.elementoId,
-      concreteira_id:draft.concreteiraId, data_concretagem:hoje, responsavel:userEmail
-    }).select().single();
-    if(e1) throw e1;
-
-    let totalCP=0; const cpsCriados=[];
-    // 2) betoneiras + 3) CPs
-    for(const b of draft.betoneiras){
-      const t = draft.tracos[b.tracoIdx]||{};
-      const { data:bet, error:e2 } = await sb.from('betoneiras').insert({
-        concretagem_id:conc.id, fck:num(t.fck), nota_fiscal:String(b.nf),
-        lacre:b.lacre||null, hora_chegada:b.hora||null, slump_medido:num(b.slump),
-        agua_adicionada:num(b.agua)||0, volume:num(b.volume)||0,
-        aceita:b.aceita, motivo_recusa_id:b.aceita?null:b.motivoId, observacao:b.obs||null
-      }).select().single();
-      if(e2) throw e2;
-
-      if(b.aceita && b.cpQtd>0){
-        const linhas = Array.from({length:b.cpQtd}).map(()=>({ betoneira_id:bet.id }));
-        const { data:cps, error:e3 } = await sb.from('corpos_prova').insert(linhas).select('numero');
-        if(e3) throw e3;
-        cps.forEach(c=>cpsCriados.push(c.numero));
-        totalCP += cps.length;
-      }
-    }
-
-    // sucesso
-    const aceitas=draft.betoneiras.filter(b=>b.aceita).length;
-    const recusas=draft.betoneiras.length-aceitas;
-    cpsCriados.sort((a,b)=>a-b);
-    const faixa = cpsCriados.length ? (' (nº '+cpsCriados[0]+' a '+cpsCriados[cpsCriados.length-1]+')') : '';
-    screen.innerHTML = casca('Concretagem salva', {back:false});
-    document.getElementById('body').innerHTML = `
-      <div style="text-align:center;padding:18px 6px">
-        <div style="font-size:46px">✓</div>
-        <div style="font-weight:700;font-size:19px;margin:6px 0 4px;color:var(--ok)">Concretagem gravada!</div>
-        <div class="sub">${draft.obraNome} · ${draft.pavNome}</div>
+// resumo final da concretagem (já está tudo gravado)
+function verResumoFinal(){
+  tela='resumo';
+  const aceitas=draft.betoneiras.filter(b=>b.aceita).length;
+  const recusas=draft.betoneiras.length-aceitas;
+  screen.innerHTML = casca('Concretagem salva', {back:false});
+  document.getElementById('body').innerHTML = `
+    <div style="text-align:center;padding:18px 6px">
+      <div style="font-size:46px">✓</div>
+      <div style="font-weight:700;font-size:19px;margin:6px 0 4px;color:var(--ok)">Concretagem gravada!</div>
+      <div class="sub">${draft.obraNome} · ${draft.pavNome}</div>
+    </div>
+    <div class="tcard"><b>Resumo</b>
+      <div class="sub" style="margin-top:8px;line-height:1.7">
+        Betoneiras: <b>${draft.betoneiras.length}</b> (${aceitas} aceita(s)${recusas?', '+recusas+' recusa(s)':''})<br>
+        Corpos de prova moldados: <b>${draft.totalCP}</b><br>
+        Registrado por: ${userEmail}
       </div>
-      <div class="tcard"><b>Resumo</b>
-        <div class="sub" style="margin-top:8px;line-height:1.7">
-          Betoneiras: <b>${draft.betoneiras.length}</b> (${aceitas} aceita(s)${recusas?', '+recusas+' recusa(s)':''})<br>
-          Corpos de prova moldados: <b>${totalCP}</b>${faixa}<br>
-          Registrado por: ${userEmail}
-        </div>
-      </div>`;
-    const foot2=document.getElementById('foot');
-    foot2.style.display=''; foot2.innerHTML = `<button class="bigbtn" onclick="zerarEVoltar()">Concluir</button>`;
-  }catch(e){
-    foot.innerHTML = `<button class="bigbtn" onclick="finalizar()">Tentar gravar de novo</button>`;
-    const body=document.getElementById('body');
-    body.insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e&&e.message?e.message:e)+'</div>');
-    // devolve a betoneira atual ao fluxo (não perde dados)
-    draft.cur = draft.betoneiras.pop();
-  }
+    </div>
+    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:4px">A coleta de assinatura será adicionada em breve.</div>`;
+  const foot=document.getElementById('foot');
+  foot.style.display=''; foot.innerHTML = `<button class="bigbtn" onclick="zerarEVoltar()">Concluir</button>`;
 }
+
 function zerarEVoltar(){
   draft.obraId=null; draft.obraNome=null; draft.pavId=null; draft.pavNome=null;
   draft.elementoId=null; draft.concreteiraId=null; draft.tracos=[]; draft.betoneiras=[]; draft.cur=null;
+  draft.concId=null; draft.totalCP=0;
   verHome();
 }
 function voltar(){
   if(tela==='abrir') verHome();
-  else if(tela==='betoneira') abrirConcretagem();
+  else if(tela==='betoneira'){ if(draft.betoneiras.length){ if(confirm('Voltar para os dados da concretagem? As betoneiras já gravadas continuam salvas.')) abrirConcretagem(); } else abrirConcretagem(); }
 }
 
 // ---------- INÍCIO ----------
