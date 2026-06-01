@@ -255,11 +255,14 @@ async function salvarProgramacao(){
 
 // ---- ROMPER ----
 const MPA_PER_TF = 1.2486;
-let rompData = '';          // data de rompimento escolhida (ISO)
+let rompData = '';          // data de rompimento padrão (ISO)
 let rompGrupos = [];        // duplas a romper
 let rompInputs = {};        // { cpId: tf }
 let rompObs = {};           // { duplaKey: obs }
+let rompDataDupla = {};     // { duplaKey: data ISO } — data por dupla
 let rompFiltroObra = 'Todas';
+let rompidosDia = [];       // rompimentos já confirmados na data do filtro
+let editRomp = {};          // edições em aberto: { rompId: {p:tf, obs:..} }
 
 function hojeISO(){ return new Date().toISOString().slice(0,10); }
 
@@ -298,13 +301,29 @@ async function buscarParaRomper(dataLimiteISO){
   return duplas;
 }
 
+// rompimentos já confirmados na data escolhida
+async function buscarRompidosDia(dataISO){
+  const { data, error } = await sb.from('rompimentos')
+    .select('id,prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao,corpo_prova_id,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,concretagens!inner(obras!inner(nome),pavimentos!inner(nome))))')
+    .eq('data_rompimento', dataISO)
+    .order('id',{ascending:true});
+  if(error) throw error;
+  return (data||[]).map(r=>{
+    const cp=r.corpos_prova, b=cp.betoneiras, c=b.concretagens;
+    return { id:r.id, numero:cp.numero, nf:b.nota_fiscal, fck:b.fck,
+      obra:c.obras.nome, pav:c.pavimentos.nome, idade:r.idade_real,
+      tf:r.prensa1_tf, mpa:r.resultado_mpa, obs:r.observacao };
+  });
+}
+
 async function abaRomper(){
   const wrap=document.getElementById('wrap');
   if(!rompData) rompData = hojeISO();
   wrap.innerHTML = `<div class="officehead"><h2>Romper</h2><p>Lance as prensas (tf) de cada corpo de prova. O resultado em MPa e a conformidade são calculados automaticamente.</p></div><div class="estado">Buscando corpos de prova…</div>`;
   try{
     rompGrupos = await buscarParaRomper(rompData);
-    rompInputs={}; rompObs={};
+    rompidosDia = await buscarRompidosDia(rompData);
+    rompInputs={}; rompObs={}; rompDataDupla={}; editRomp={};
     desenharRomper();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
@@ -320,24 +339,19 @@ function resultadoDupla(d){
   return Math.max(...vals);
 }
 function ehFinal(idade){ return idade>=28; }
-
+function vereditoHTML(mpa, idade, fck){
+  if(mpa==null) return '<span class="muted">—</span>';
+  let badge='';
+  if(ehFinal(idade)){ const ok=mpa>=(fck||0); badge=` <span class="badge ${ok?'b-ok':'b-bad'}">${ok?'conforme':'não conf.'}</span>`; }
+  else badge=` <span class="badge b-mut">parcial (${idade}d)</span>`;
+  return `<b class="mono">${mpa.toFixed(1)} MPa</b>${badge}`;
+}
 function atualizaPrevia(duplaKey){
-  // recalcula só a linha de resultado da dupla, sem redesenhar tudo (mantém foco no input)
   const d = rompGrupos.find(x=>x.duplaKey===duplaKey);
   if(!d) return;
   const el = document.getElementById('res_'+duplaKey.replace(/[|:]/g,'_'));
   if(!el) return;
-  const r = resultadoDupla(d);
-  if(r==null){ el.innerHTML = '<span class="muted">—</span>'; return; }
-  const fck = d.fck||0;
-  let veredito='';
-  if(ehFinal(d.idade)){
-    const ok = r>=fck;
-    veredito = ` <span class="badge ${ok?'b-ok':'b-bad'}">${ok?'conforme':'não conf.'}</span>`;
-  } else {
-    veredito = ` <span class="badge b-mut">parcial (${d.idade}d)</span>`;
-  }
-  el.innerHTML = `<b class="mono">${r.toFixed(1)} MPa</b>${veredito}`;
+  el.innerHTML = vereditoHTML(resultadoDupla(d), d.idade, d.fck);
 }
 
 function desenharRomper(){
@@ -355,48 +369,96 @@ function desenharRomper(){
       <div style="margin-left:auto;color:var(--muted);font-size:13px;align-self:center">${lista.length} dupla(s) a romper</div>
     </div>`;
 
-  if(!lista.length){ wrap.innerHTML=html+'<div class="estado">Nenhum corpo de prova para romper até esta data. 🎉</div>'; return; }
+  // ----- TABELA A ROMPER -----
+  if(!lista.length){
+    html += '<div class="estado" style="padding:30px">Nenhum corpo de prova para romper até esta data. 🎉</div>';
+  } else {
+    html += `<div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:55px">Idade</th><th style="width:105px">Prevista</th>
+        <th style="width:200px">Prensas (tf)</th><th style="width:150px">Resultado</th>
+        <th style="width:150px">Data rompim.</th><th style="width:180px">Observação</th>
+      </tr></thead><tbody>`;
+    lista.forEach(d=>{
+      const atrasada = d.prevista < hojeISO();
+      const prevTxt = fmtData(d.prevista) + (atrasada?'<br><span class="badge b-bad">atrasada</span>':'');
+      const inputs = d.cps.map(c=>`<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0">
+          <span class="mono" style="font-size:12px;color:var(--muted)">CP${c.numero}</span>
+          <input style="width:68px;padding:8px" inputmode="decimal" placeholder="tf"
+            value="${rompInputs[c.id]||''}"
+            oninput="rompInputs[${c.id}]=this.value;atualizaPrevia('${d.duplaKey}')"></span>`).join('');
+      const resId = 'res_'+d.duplaKey.replace(/[|:]/g,'_');
+      const dataVal = rompDataDupla[d.duplaKey]||rompData;
+      html += `<tr>
+        <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
+        <td class="mono">${d.nf}</td>
+        <td class="mono">${d.idade}d</td>
+        <td class="mono">${prevTxt}</td>
+        <td>${inputs}</td>
+        <td id="${resId}"><span class="muted">—</span></td>
+        <td><input type="date" style="width:138px;padding:8px" value="${dataVal}" onchange="rompDataDupla['${d.duplaKey}']=this.value"></td>
+        <td><input style="width:166px;padding:8px" placeholder="opcional" value="${rompObs[d.duplaKey]||''}" oninput="rompObs['${d.duplaKey}']=this.value"></td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>
+      <button class="btn" onclick="confirmarRompimentos()" style="margin-top:16px">Confirmar rompimentos</button>`;
+  }
 
-  html += `<div class="card" style="padding:0;overflow:hidden">
-    <table><thead><tr>
-      <th>Obra · Pav</th><th style="width:90px">NF</th><th style="width:60px">Idade</th><th style="width:110px">Prevista</th>
-      <th style="width:230px">Prensas (tf)</th><th style="width:170px">Resultado</th>
-    </tr></thead><tbody>`;
-  lista.forEach(d=>{
-    const atrasada = d.prevista < hojeISO();
-    const prevTxt = fmtData(d.prevista) + (atrasada?' <span class="badge b-bad">atrasada</span>':'');
-    const inputs = d.cps.map(c=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px">
-        <span class="mono" style="font-size:12px;color:var(--muted)">CP${c.numero}</span>
-        <input style="width:74px;padding:8px" inputmode="decimal" placeholder="tf"
-          value="${rompInputs[c.id]||''}"
-          oninput="rompInputs[${c.id}]=this.value;atualizaPrevia('${d.duplaKey}')"></span>`).join('');
-    const resId = 'res_'+d.duplaKey.replace(/[|:]/g,'_');
-    html += `<tr>
-      <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
-      <td class="mono">${d.nf}</td>
-      <td class="mono">${d.idade}d</td>
-      <td class="mono">${prevTxt}</td>
-      <td>${inputs}</td>
-      <td id="${resId}"><span class="muted">—</span></td>
-    </tr>`;
-  });
-  html += `</tbody></table></div>
-    <button class="btn" onclick="confirmarRompimentos()" style="margin-top:16px">Confirmar rompimentos</button>`;
+  // ----- TABELA ROMPIDOS NO DIA -----
+  html += `<div style="margin-top:34px"><h2 style="font-size:19px;margin:0 0 4px">Rompidos em ${fmtData(rompData)}</h2>
+    <p style="color:var(--muted);margin:0 0 16px;font-size:14px">Corpos de prova já rompidos nesta data. Você pode corrigir a prensa e a observação (a idade fica travada).</p>`;
+  if(!rompidosDia.length){
+    html += '<div class="estado" style="padding:30px">Nenhum rompimento confirmado nesta data ainda.</div>';
+  } else {
+    html += `<div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:70px">CP</th><th style="width:55px">Idade</th>
+        <th style="width:150px">Prensa (tf)</th><th style="width:160px">Resultado</th><th style="width:200px">Observação</th><th style="width:90px"></th>
+      </tr></thead><tbody>`;
+    rompidosDia.forEach(r=>{
+      const emEdicao = !!editRomp[r.id];
+      const mpa = r.mpa!=null ? Number(r.mpa) : (r.tf!=null? r.tf*MPA_PER_TF : null);
+      if(emEdicao){
+        const e=editRomp[r.id];
+        html += `<tr style="background:#fffdf4">
+          <td>${r.obra}<div style="color:var(--muted);font-size:12px">${r.pav}</div></td>
+          <td class="mono">${r.nf}</td><td class="mono">${r.numero}</td><td class="mono">${r.idade}d</td>
+          <td><input style="width:90px;padding:8px" inputmode="decimal" value="${e.p}" oninput="editRomp[${r.id}].p=this.value"></td>
+          <td class="muted" style="font-size:12px">recalcula ao salvar</td>
+          <td><input style="width:186px;padding:8px" value="${e.obs||''}" oninput="editRomp[${r.id}].obs=this.value"></td>
+          <td><button class="btn" style="padding:8px 14px;font-size:13px" onclick="salvarEdicaoRomp(${r.id})">Salvar</button>
+              <button class="btn ghost" style="padding:8px 12px;font-size:13px;margin-top:4px" onclick="delete editRomp[${r.id}];desenharRomper()">Cancelar</button></td>
+        </tr>`;
+      } else {
+        html += `<tr>
+          <td>${r.obra}<div style="color:var(--muted);font-size:12px">${r.pav}</div></td>
+          <td class="mono">${r.nf}</td><td class="mono">${r.numero}</td><td class="mono">${r.idade}d</td>
+          <td class="mono">${r.tf!=null?Number(r.tf).toFixed(1):'—'}</td>
+          <td>${vereditoHTML(mpa, r.idade, r.fck)}</td>
+          <td style="font-size:13px">${r.obs||'<span class="muted">—</span>'}</td>
+          <td><button class="btn ghost" style="padding:8px 14px;font-size:13px" onclick="editRomp[${r.id}]={p:'${r.tf!=null?r.tf:''}',obs:${JSON.stringify(r.obs||'')}};desenharRomper()">Editar</button></td>
+        </tr>`;
+      }
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += `</div>`;
+
   wrap.innerHTML = html;
-  // recalcula prévias já preenchidas
   lista.forEach(d=>atualizaPrevia(d.duplaKey));
 }
 
 async function confirmarRompimentos(){
-  // monta 1 rompimento por CP que tenha prensa preenchida
+  // monta 1 rompimento por CP que tenha prensa preenchida; usa data por dupla (ou a padrão)
   const linhas=[];
   rompGrupos.forEach(d=>{
+    const dataDupla = rompDataDupla[d.duplaKey] || rompData;
     d.cps.forEach(c=>{
       const tf=parseFloat(String(rompInputs[c.id]||'').replace(',','.'));
       if(!isNaN(tf)&&tf>0){
         linhas.push({
           corpo_prova_id:c.id, prensa1_tf:tf, idade_real:d.idade,
-          data_rompimento:rompData, confirmado:true, observacao:rompObs[d.duplaKey]||null
+          data_rompimento:dataDupla, confirmado:true, observacao:rompObs[d.duplaKey]||null
         });
       }
     });
@@ -406,13 +468,23 @@ async function confirmarRompimentos(){
   try{
     const { error } = await sb.from('rompimentos').insert(linhas);
     if(error) throw error;
-    const wrap=document.getElementById('wrap');
-    wrap.innerHTML=`<div class="officehead"><h2>Romper</h2></div>
-      <div class="card" style="text-align:center"><div style="font-size:44px">✓</div>
-      <div style="font-weight:700;font-size:18px;color:var(--ok);margin:6px 0">Rompimentos confirmados!</div>
-      <div class="cs">${linhas.length} corpo(s) de prova rompido(s). Os resultados em MPa e a conformidade já estão calculados.</div>
-      <button class="btn" onclick="abaRomper()" style="margin-top:8px">Voltar para Romper</button></div>`;
+    await abaRomper(); // recarrega: some de "a romper", aparece em "rompidos"
+    document.getElementById('wrap').insertAdjacentHTML('afterbegin',
+      `<div class="card" style="text-align:center;border-color:#bcd2bf;background:#f3f9f4"><div style="font-size:34px">✓</div>
+       <div style="font-weight:700;color:var(--ok)">${linhas.length} rompimento(s) confirmado(s)!</div></div>`);
   }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
+}
+
+async function salvarEdicaoRomp(id){
+  const e=editRomp[id];
+  const tf=parseFloat(String(e.p||'').replace(',','.'));
+  if(isNaN(tf)||tf<=0){ alert('Informe uma prensa válida.'); return; }
+  try{
+    const { error } = await sb.from('rompimentos').update({ prensa1_tf:tf, observacao:e.obs||null }).eq('id',id);
+    if(error) throw error;
+    delete editRomp[id];
+    await abaRomper();
+  }catch(err){ alert('Não consegui salvar a edição: '+(err.message||err)); }
 }
 
 // ---- INÍCIO ----
