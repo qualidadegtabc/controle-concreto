@@ -112,6 +112,8 @@ let nomeUsuario = '';
 const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretagem
 
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
+let assinaturaCtx = null; // { concId, titulo, origem }
 function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:6, cpModo:'preset', motivoId:null, obs:'' }; }
 
 // ---------- LOGIN ----------
@@ -203,8 +205,8 @@ function verHome(){
     <div class="hello">Olá!</div>
     <div class="sub" style="margin-bottom:20px">O que vamos fazer?</div>
     <button class="homebtn primary" onclick="abrirConcretagem()"><span class="hi">+</span><span><b>Nova concretagem</b><small>registrar uma concretagem no canteiro</small></span></button>
-    <button class="homebtn" onclick="aviso('Concretagens concluídas')"><span class="hi">✓</span><span><b>Concretagens concluídas</b><small>em breve</small></span></button>
-    <button class="homebtn" onclick="aviso('Pendentes de coleta de assinatura')"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>em breve</small></span></button>`;
+    <button class="homebtn" onclick="verConcluidas()"><span class="hi">✓</span><span><b>Concretagens concluídas</b><small>ver concretagens finalizadas</small></span></button>
+    <button class="homebtn" onclick="verPendentes()"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>coletar assinaturas que faltam</small></span></button>`;
 }
 function aviso(o){ alert(o+' — esta tela ainda será construída.'); }
 
@@ -422,7 +424,7 @@ function novaBetoneiraNaTela(){
 }
 
 // resumo final da concretagem (já está tudo gravado)
-function verResumoFinal(){
+async function verResumoFinal(){
   tela='resumo';
   const aceitas=draft.betoneiras.filter(b=>b.aceita).length;
   const recusas=draft.betoneiras.length-aceitas;
@@ -440,9 +442,129 @@ function verResumoFinal(){
         Registrado por: ${userEmail}
       </div>
     </div>
-    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:4px">A coleta de assinatura será adicionada em breve.</div>`;
+    <div class="note" style="font-size:12.5px;color:var(--muted);background:#f3f0e7;border-radius:10px;padding:11px;margin-top:4px">Agora colete a assinatura do responsável que recebeu o concreto — ou deixe pra depois (fica em "Pendentes de coleta de assinatura").</div>`;
+  // marca a concretagem como finalizada no banco
+  if(draft.concId){
+    try{ await sb.from('concretagens').update({finalizada:true, finalizada_em:new Date().toISOString()}).eq('id', draft.concId); }catch(_){}
+  }
   const foot=document.getElementById('foot');
-  foot.style.display=''; foot.innerHTML = `<button class="bigbtn" onclick="zerarEVoltar()">Concluir</button>`;
+  foot.style.display='';
+  foot.innerHTML = `
+    <button class="bigbtn" onclick="telaAssinatura(${draft.concId},'${(draft.obraNome+' · '+draft.pavNome).replace(/'/g,'')}','resumo')">Coletar assinatura agora</button>
+    <button class="bigbtn ghost" onclick="zerarEVoltar()">Assinar depois</button>`;
+}
+
+// ---------- ASSINATURA ----------
+function telaAssinatura(concId, titulo, origem){
+  assinaturaCtx = { concId, titulo, origem };
+  tela='assinatura';
+  screen.innerHTML = casca('Coletar assinatura', {back:false});
+  const body=document.getElementById('body'), foot=document.getElementById('foot');
+  body.innerHTML = `
+    <div class="sub" style="margin:-2px 0 14px"><b>${titulo}</b></div>
+    <div class="row"><label class="fld">Nome de quem assina (responsável)</label>
+      <input id="ass_nome" placeholder="nome do responsável na obra"></div>
+    <div class="fldlabel">Assinatura</div>
+    <div class="sub" style="font-size:12.5px;margin:-2px 0 8px">Peça ao responsável para assinar com o dedo na área abaixo.</div>
+    <canvas id="sigpad" style="width:100%;height:200px;background:#fff;border:1.5px dashed var(--accent);border-radius:14px;touch-action:none;display:block"></canvas>
+    <button class="bigbtn ghost" style="margin-top:10px" onclick="window._sigClear&&window._sigClear()">Limpar</button>`;
+  foot.style.display='';
+  foot.innerHTML = `
+    <button class="bigbtn" onclick="confirmarAssinatura()">Confirmar assinatura</button>
+    <button class="bigbtn ghost" onclick="cancelarAssinatura()">Voltar</button>`;
+  initSig();
+}
+function initSig(){
+  const c=document.getElementById('sigpad'); if(!c) return;
+  c.width=c.clientWidth; c.height=200;
+  const ctx=c.getContext('2d'); ctx.lineWidth=2.6; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0E0E0E';
+  let drawing=false, has=false;
+  const pos=e=>{ const r=c.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; };
+  c.addEventListener('pointerdown',e=>{ drawing=true; has=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); c.setPointerCapture(e.pointerId); });
+  c.addEventListener('pointermove',e=>{ if(!drawing) return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); });
+  c.addEventListener('pointerup',()=>{ drawing=false; });
+  window._sigHas=()=>has; window._sigClear=()=>{ ctx.clearRect(0,0,c.width,c.height); has=false; };
+}
+async function confirmarAssinatura(){
+  const nome=(document.getElementById('ass_nome').value||'').trim();
+  if(!nome){ alert('Informe o nome de quem está assinando.'); return; }
+  if(window._sigHas && !window._sigHas()){ alert('Colete a assinatura antes de confirmar.'); return; }
+  const img=document.getElementById('sigpad').toDataURL('image/png');
+  const foot=document.getElementById('foot'), orig=foot.innerHTML;
+  foot.innerHTML='<button class="bigbtn" disabled>Salvando…</button>';
+  try{
+    const { error } = await sb.from('concretagens').update({
+      assinado:true, assinante_nome:nome, assinatura_img:img, assinado_em:new Date().toISOString()
+    }).eq('id', assinaturaCtx.concId);
+    if(error) throw error;
+    telaAssinaturaOk();
+  }catch(e){
+    foot.innerHTML=orig;
+    document.getElementById('body').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui salvar a assinatura.</b><br>'+(e&&e.message?e.message:e)+'</div>');
+    window.scrollTo(0,0);
+  }
+}
+function cancelarAssinatura(){
+  if(assinaturaCtx && assinaturaCtx.origem==='pendentes') verPendentes();
+  else verResumoFinal();
+}
+function telaAssinaturaOk(){
+  tela='assinaturaOk';
+  const voltarFn = (assinaturaCtx && assinaturaCtx.origem==='pendentes') ? 'verPendentes()' : 'zerarEVoltar()';
+  screen.innerHTML = casca('Assinatura coletada', {back:false});
+  document.getElementById('body').innerHTML = `<div style="text-align:center;padding:24px 6px">
+    <div style="font-size:46px">✓</div>
+    <div style="font-weight:700;font-size:19px;margin:6px 0 4px;color:var(--ok)">Assinatura coletada!</div>
+    <div class="sub">Concretagem assinada e registrada.</div></div>`;
+  const foot=document.getElementById('foot'); foot.style.display='';
+  foot.innerHTML = `<button class="bigbtn" onclick="${voltarFn}">Concluir</button>`;
+}
+
+// ---------- CONCLUÍDAS / PENDENTES ----------
+async function buscarConcretagens(pendentesSo){
+  let q = sb.from('concretagens')
+    .select('id,data_concretagem,assinado,assinante_nome,obras!inner(nome),pavimentos!inner(nome),betoneiras(volume,aceita)')
+    .eq('finalizada', true)
+    .order('data_concretagem',{ascending:false});
+  if(pendentesSo) q = q.eq('assinado', false);
+  const { data, error } = await q;
+  if(error) throw error;
+  return data||[];
+}
+function cardConcretagem(m){
+  const bts=m.betoneiras||[];
+  const aceitas=bts.filter(b=>b.aceita).length;
+  const recusas=bts.length-aceitas;
+  const vol=bts.filter(b=>b.aceita).reduce((s,b)=>s+(Number(b.volume)||0),0);
+  const titulo=(m.obras.nome+' · '+m.pavimentos.nome).replace(/'/g,'');
+  const status = m.assinado
+    ? `<span style="display:inline-block;margin-top:10px;background:#eaf3ec;color:var(--ok);border:1px solid #bcd2bf;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700">assinada${m.assinante_nome?' · '+m.assinante_nome:''}</span>`
+    : `<button class="bigbtn" style="margin-top:11px;padding:12px;font-size:15px" onclick="telaAssinatura(${m.id},'${titulo}','pendentes')">Coletar assinatura</button>`;
+  return `<div class="tcard">
+    <div style="font-weight:700">${m.obras.nome} · ${m.pavimentos.nome}</div>
+    <div class="sub" style="margin-top:6px">${fmtData(m.data_concretagem)} · ${aceitas} betoneira(s)${recusas?' · '+recusas+' recusa(s)':''} · ${vol.toFixed(1)} m³</div>
+    ${status}
+  </div>`;
+}
+async function verConcluidas(){
+  tela='concluidas';
+  screen.innerHTML = casca('Concretagens concluídas', {back:true});
+  document.getElementById('foot').style.display='none';
+  const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
+  try{
+    const lista=await buscarConcretagens(false);
+    body.innerHTML = lista.length ? lista.map(cardConcretagem).join('') : '<div class="estado">Nenhuma concretagem concluída ainda.</div>';
+  }catch(e){ erro(e); }
+}
+async function verPendentes(){
+  tela='pendentes';
+  screen.innerHTML = casca('Pendentes de assinatura', {back:true});
+  document.getElementById('foot').style.display='none';
+  const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
+  try{
+    const lista=await buscarConcretagens(true);
+    body.innerHTML = lista.length ? lista.map(cardConcretagem).join('') : '<div class="estado">Nenhuma assinatura pendente. 🎉</div>';
+  }catch(e){ erro(e); }
 }
 
 function zerarEVoltar(){
@@ -454,6 +576,7 @@ function zerarEVoltar(){
 function voltar(){
   if(tela==='abrir') verHome();
   else if(tela==='betoneira'){ if(draft.betoneiras.length){ if(confirm('Voltar para os dados da concretagem? As betoneiras já gravadas continuam salvas.')) abrirConcretagem(); } else abrirConcretagem(); }
+  else if(tela==='concluidas' || tela==='pendentes') verHome();
 }
 
 // ---------- INÍCIO ----------
