@@ -187,7 +187,7 @@ function render(){
   else desenharRelatorios();
   // garante que o seletor de obra mostre a obra atual (evita ele "voltar" visualmente)
   const sel=document.getElementById('selObra');
-  if(sel) sel.value = G.obra;
+  if(sel) sel.value = String(G.obra);
 }
 
 async function iniciar(){
@@ -298,7 +298,7 @@ function dadosFiltrados(){
 // ---- DASHBOARD ----
 function desenharDash(){
   const wrap=document.getElementById('wrap'); const D=G.dados;
-  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||'';
+  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   const {R,P,X}=dadosFiltrados();
   const finais=duplasFinais(R);
 
@@ -332,7 +332,7 @@ function desenharDash(){
   const rowX=x=>`<tr><td>${x.pav}</td><td class="mono">${x.nf}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">fck ${x.fck||'—'}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
   const volF=(arr,cols)=>{ const tot=arr.reduce((s,r)=>s+(r.vol||0),0); return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${arr.length} registro(s)</td></tr>`; };
 
-  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${o.id===G.obra?'selected':''}>${o.nome}</option>`).join('');
+  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
 
   wrap.innerHTML=`
     <div class="officehead"><h2>Dashboard de resultados</h2><p>Elevação da torre — cada bloco é um andar, colorido pela conformidade. Clique para ver o detalhe.</p></div>
@@ -407,7 +407,7 @@ function selData(iso){ G.fData = (G.fData===iso)?'':iso; render(); }
 // ---- RELATÓRIOS (uma aba, dois cards de filtros, sem tabela) ----
 function desenharRelatorios(){
   const wrap=document.getElementById('wrap'); const D=G.dados;
-  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${o.id===G.obra?'selected':''}>${o.nome}</option>`).join('');
+  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
   // opções de traço, pavimento e idade a partir dos dados da obra
   const tracos=[...new Set(D.R.concat(D.X).map(r=>labelTraco(r)))].sort();
   const pavs=[...new Set(D.pavs.map(p=>p.nome))];
@@ -469,7 +469,7 @@ function relQuantidades(){
 // ---- PDFs ----
 function pdfHeader(doc,titulo){
   const pageW=doc.internal.pageSize.getWidth(); const accent=[189,93,39], muted=[122,116,106];
-  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
+  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(14,14,14);
   doc.text('GT&ABC · Controle Tecnológico de Concreto', 12, 14);
   doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
@@ -549,7 +549,7 @@ function somaPorTraco(arr){
 }
 function exportarRelExcel(tipo){
   if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
-  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
+  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
   const wb=XLSX.utils.book_new();
   // escreve um título "Relatório — Obra" no topo da aba e os dados abaixo
   const comTitulo=(ws, titulo, ncols)=>{
