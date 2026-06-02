@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Laboratório · Controle de Concreto</title>
+<link rel="manifest" href="lab-manifest.json">
+<meta name="theme-color" content="#BD5D27">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -92,6 +94,31 @@ function addDiasISO(dataISO, dias){ const d=new Date(dataISO+'T00:00:00'); d.set
 function fmtData(iso){ if(!iso) return '—'; const[a,m,d]=iso.split('-'); return `${d}/${m}/${a}`; }
 // Supabase devolve relação 1:1 (ex.: o rompimento de um CP) como objeto único, não lista. Normaliza p/ array.
 function asArr(v){ return v==null ? [] : (Array.isArray(v) ? v : [v]); }
+
+// ---- detecção de offline ----
+function estaOffline(){ return (typeof navigator!=='undefined' && navigator.onLine===false); }
+function ehErroDeRede(e){
+  const m=((e&&e.message)||String(e||'')).toLowerCase();
+  return estaOffline() || m.includes('failed to fetch') || m.includes('networkerror') || m.includes('fetch') || m.includes('network');
+}
+// mensagem padrão quando a gravação falha sem internet
+function avisoSemInternet(acao){
+  return `<div class="erro"><b>Sem internet — ${acao} NÃO foi salvo.</b><br>`+
+    `Os números continuam na tela. Quando o sinal voltar, toque novamente para salvar. Não saia desta tela até confirmar a gravação.</div>`;
+}
+// banner fixo de status offline no topo
+function atualizarBannerOffline(){
+  let b=document.getElementById('offbanner');
+  if(estaOffline()){
+    if(!b){ b=document.createElement('div'); b.id='offbanner';
+      b.style.cssText='position:sticky;top:0;z-index:50;background:#8a3220;color:#fff;text-align:center;padding:8px 14px;font-size:13px;font-weight:700';
+      b.textContent='⚠ Sem internet — você pode visualizar, mas gravações só serão salvas quando o sinal voltar.';
+      document.body.insertBefore(b, document.body.firstChild);
+    }
+  } else if(b){ b.remove(); }
+}
+window.addEventListener('online', atualizarBannerOffline);
+window.addEventListener('offline', atualizarBannerOffline);
 
 // ---- LOGIN ----
 function telaLogin(msg){
@@ -316,6 +343,7 @@ async function salvarProgramacao(){
     });
   });
   if(!updates.length){ alert('Escolha a idade de ao menos uma dupla.'); return; }
+  if(estaOffline()){ document.getElementById('wrap').insertAdjacentHTML('afterbegin', avisoSemInternet('a programação')); window.scrollTo(0,0); return; }
   try{
     const res=await Promise.all(updates.map(u=>sb.from('corpos_prova').update({idade_prevista:u.idade_prevista,data_prevista:u.data_prevista}).eq('id',u.id)));
     for(const r of res) if(r.error) throw r.error;
@@ -325,7 +353,10 @@ async function salvarProgramacao(){
       <div style="font-weight:700;font-size:18px;color:var(--ok);margin:6px 0">Idades programadas!</div>
       <div class="cs">${updates.length} corpo(s) de prova com data de rompimento definida.</div>
       <button class="btn" onclick="abaProgramar()" style="margin-top:8px">Programar mais</button></div>`;
-  }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui salvar.</b><br>'+(e.message||e)+'</div>'); }
+  }catch(e){
+    const msg = ehErroDeRede(e) ? avisoSemInternet('a programação') : '<div class="erro"><b>Não consegui salvar.</b><br>'+(e.message||e)+'</div>';
+    document.getElementById('wrap').insertAdjacentHTML('afterbegin', msg); window.scrollTo(0,0);
+  }
 }
 
 // ---- ROMPER ----
@@ -505,11 +536,12 @@ async function reprogramarIdade(duplaKey, novaIdade, selectEl){
     if(selectEl) selectEl.value = d.idade; // desfaz a seleção visual
     return;
   }
+  if(estaOffline()){ alert('Sem internet — a reprogramação NÃO foi salva. Tente novamente quando o sinal voltar.'); if(selectEl) selectEl.value=d.idade; return; }
   try{
     const res = await Promise.all(d.cps.map(c=>sb.from('corpos_prova').update({idade_prevista:novaIdade, data_prevista:novaPrev}).eq('id',c.id)));
     for(const r of res) if(r.error) throw r.error;
     await abaRomper(); // recarrega: a dupla reposiciona conforme a nova data
-  }catch(e){ alert('Não consegui reprogramar: '+(e.message||e)); if(selectEl) selectEl.value=d.idade; }
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a reprogramação NÃO foi salva. Tente novamente quando o sinal voltar.':'Não consegui reprogramar: '+(e.message||e))); if(selectEl) selectEl.value=d.idade; }
 }
 
 function desenharRomper(){
@@ -654,12 +686,13 @@ async function salvarEdicaoDupla(duplaId){
     if(isNaN(tf)||tf<=0){ alert('Informe prensa válida para CP'+it.numero+'.'); return; }
     ups.push({ rompId:it.rompId, tf });
   }
+  if(estaOffline()){ alert('Sem internet — a edição NÃO foi salva. Os valores continuam na tela; tente novamente quando o sinal voltar.'); return; }
   try{
     const res=await Promise.all(ups.map(u=>sb.from('rompimentos').update({prensa1_tf:u.tf, observacao:e.obs||null}).eq('id',u.rompId)));
     for(const r of res) if(r.error) throw r.error;
     delete editRomp[duplaId];
     await abaRomper();
-  }catch(err){ alert('Não consegui salvar a edição: '+(err.message||err)); }
+  }catch(err){ alert(ehErroDeRede(err)?'Sem internet — a edição NÃO foi salva. Os valores continuam na tela; tente novamente quando o sinal voltar.':'Não consegui salvar a edição: '+(err.message||err)); }
 }
 
 async function confirmarRompimentos(){
@@ -681,6 +714,7 @@ async function confirmarRompimentos(){
   });
   if(!linhas.length){ alert('Lance ao menos uma prensa.'); return; }
   if(!confirm(linhas.length+' corpo(s) de prova serão rompidos e confirmados nesta data ('+fmtData(hoje)+'). Continuar?')) return;
+  if(estaOffline()){ document.getElementById('wrap').insertAdjacentHTML('afterbegin', avisoSemInternet('o rompimento')); window.scrollTo(0,0); return; }
   try{
     const { error } = await sb.from('rompimentos').insert(linhas);
     if(error) throw error;
@@ -689,7 +723,10 @@ async function confirmarRompimentos(){
     document.getElementById('wrap').insertAdjacentHTML('afterbegin',
       `<div class="card" style="text-align:center;border-color:#bcd2bf;background:#f3f9f4"><div style="font-size:34px">✓</div>
        <div style="font-weight:700;color:var(--ok)">${linhas.length} rompimento(s) confirmado(s)!</div></div>`);
-  }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui gravar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
+  }catch(e){
+    const msg = ehErroDeRede(e) ? avisoSemInternet('o rompimento') : '<div class="erro"><b>Não consegui gravar.</b><br>'+(e.message||e)+'</div>';
+    document.getElementById('wrap').insertAdjacentHTML('afterbegin', msg); window.scrollTo(0,0);
+  }
 }
 
 // marca os CPs de 63d liberados como descartados (grava no banco)
@@ -698,6 +735,7 @@ async function descartarLiberados(){
   const ids  = dispensaveis.flatMap(d=>d.cps.map(c=>c.id));
   const nums = dispensaveis.flatMap(d=>d.cps.map(c=>c.numero)).sort((a,b)=>a-b);
   if(!confirm(`Marcar ${ids.length} corpo(s) de prova de 63 dias como descartados?\nCP: ${nums.join(', ')}\n\nEles saem da fila de rompimento e ficam registrados como descartados.`)) return;
+  if(estaOffline()){ document.getElementById('wrap').insertAdjacentHTML('afterbegin', avisoSemInternet('o descarte')); window.scrollTo(0,0); return; }
   try{
     const { error } = await sb.from('corpos_prova').update({descartado:true}).in('id', ids);
     if(error) throw error;
@@ -705,7 +743,10 @@ async function descartarLiberados(){
     document.getElementById('wrap').insertAdjacentHTML('afterbegin',
       `<div class="card" style="text-align:center;border-color:#bcd2bf;background:#f3f9f4"><div style="font-size:34px">✓</div>
        <div style="font-weight:700;color:var(--ok)">${ids.length} corpo(s) de prova descartado(s).</div></div>`);
-  }catch(e){ document.getElementById('wrap').insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui descartar.</b><br>'+(e.message||e)+'</div>'); window.scrollTo(0,0); }
+  }catch(e){
+    const msg = ehErroDeRede(e) ? avisoSemInternet('o descarte') : '<div class="erro"><b>Não consegui descartar.</b><br>'+(e.message||e)+'</div>';
+    document.getElementById('wrap').insertAdjacentHTML('afterbegin', msg); window.scrollTo(0,0);
+  }
 }
 
 // ================= ABA RESULTADOS =================
@@ -991,6 +1032,14 @@ function telaSemAcesso(msg){
   if(data.session){ userEmail=data.session.user.email; iniciar(); }
   else telaLogin('');
 })();
+
+// PWA: registra o service worker do Laboratório (cache próprio, rede-primeiro)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('lab-sw.js').catch(()=>{}));
+}
+// mostra o aviso de offline já na abertura, se for o caso
+window.addEventListener('load', atualizarBannerOffline);
+
 </script>
 </body>
 </html>
