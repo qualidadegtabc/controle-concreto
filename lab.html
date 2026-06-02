@@ -94,6 +94,14 @@ function addDiasISO(dataISO, dias){ const d=new Date(dataISO+'T00:00:00'); d.set
 function fmtData(iso){ if(!iso) return '—'; const[a,m,d]=iso.split('-'); return `${d}/${m}/${a}`; }
 // Supabase devolve relação 1:1 (ex.: o rompimento de um CP) como objeto único, não lista. Normaliza p/ array.
 function asArr(v){ return v==null ? [] : (Array.isArray(v) ? v : [v]); }
+// rótulo de traço: fck X · slump±tol · descrição
+function labelTraco(d){
+  const has=v=>v!==null&&v!==undefined&&String(v).trim()!=='';
+  let s=`fck ${has(d.fck)?d.fck:'—'}`;
+  if(has(d.slump)) s+=` · ${d.slump}±${has(d.tol)?d.tol:'?'}`;
+  if(has(d.desc)) s+=` · ${d.desc}`;
+  return s;
+}
 
 // ---- detecção de offline ----
 function estaOffline(){ return (typeof navigator!=='undefined' && navigator.onLine===false); }
@@ -236,7 +244,7 @@ let progGrupos=[], progEscolhas={};
 // busca CPs sem idade, monta: concretagem -> traço(fck) -> betoneiras(NF) -> duplas
 async function buscarParaProgramar(){
   const { data, error } = await sb.from('corpos_prova')
-    .select('id,numero,idade_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagem_id,criado_em,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome)))')
+    .select('id,numero,idade_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagem_id,criado_em,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome),elementos(nome)))')
     .is('idade_prevista', null).eq('descartado', false).order('numero',{ascending:true});
   if(error) throw error;
 
@@ -245,7 +253,7 @@ async function buscarParaProgramar(){
   (data||[]).forEach(cp=>{
     const b=cp.betoneiras, c=b.concretagens;
     if(!bts[b.id]) bts[b.id]={betoneiraId:b.id, nf:b.nota_fiscal, fck:b.fck, criado:b.criado_em,
-      concId:c.id, obra:c.obras.nome, pav:c.pavimentos.nome, data:c.data_concretagem, cps:[]};
+      concId:c.id, obra:c.obras.nome, pav:c.pavimentos.nome, elem:(c.elementos&&c.elementos.nome)||'', data:c.data_concretagem, cps:[]};
     bts[b.id].cps.push({id:cp.id, numero:cp.numero});
   });
   // forma duplas por betoneira (par na ordem; ímpar sobra 1)
@@ -255,7 +263,7 @@ async function buscarParaProgramar(){
   const tracos={};
   Object.values(bts).forEach(b=>{
     const chave = b.concId+'|'+b.fck;
-    if(!tracos[chave]) tracos[chave]={concId:b.concId, fck:b.fck, obra:b.obra, pav:b.pav, data:b.data, betoneiras:[]};
+    if(!tracos[chave]) tracos[chave]={concId:b.concId, fck:b.fck, obra:b.obra, pav:b.pav, elem:b.elem, data:b.data, betoneiras:[]};
     tracos[chave].betoneiras.push(b);
   });
 
@@ -290,7 +298,7 @@ function desenharProgramar(){
   progGrupos.forEach((t,ti)=>{
     // ----- bloco do TRAÇO (padrão) -----
     const nfList = t.noPadrao.map(b=>'NF '+b.nf).join(', ');
-    html += `<div class="card"><div class="ch">${t.obra} · ${t.pav} — Traço Fck ${t.fck||'—'}</div>
+    html += `<div class="card"><div class="ch">${t.obra} · ${t.pav} — Traço Fck ${t.fck||'—'}${t.elem?' · '+t.elem:''}</div>
       <div class="cs">moldagem ${fmtData(t.data)} · padrão definido pela 1ª betoneira (${t.padraoN} dupla${t.padraoN>1?'s':''}) · aplica a: ${nfList}</div>
       <table><thead><tr><th style="width:130px">Posição</th><th style="width:200px">Idade (padrão)</th><th>Data prevista</th></tr></thead><tbody>`;
     for(let pos=0; pos<t.padraoN; pos++){
@@ -306,7 +314,7 @@ function desenharProgramar(){
     // ----- blocos AVULSOS (qtd de duplas diferente do padrão) -----
     t.avulsas.forEach(b=>{
       html += `<div class="card" style="border-style:dashed"><div class="ch">${t.obra} · ${t.pav} — NF ${b.nf} <span class="chip">avulsa</span></div>
-        <div class="cs">Fck ${b.fck||'—'} · ${b.nDuplas} dupla(s) — quantidade diferente do padrão do traço, programe à parte</div>
+        <div class="cs">Fck ${b.fck||'—'}${t.elem?' · '+t.elem:''} · ${b.nDuplas} dupla(s) — quantidade diferente do padrão do traço, programe à parte</div>
         <table><thead><tr><th style="width:160px">Dupla (CP)</th><th style="width:200px">Idade</th><th>Data prevista</th></tr></thead><tbody>`;
       b.duplas.forEach((d,di)=>{
         const chave='A'+b.betoneiraId+':'+di, nums=d.map(c=>c.numero).join(' e ');
@@ -379,7 +387,7 @@ function hojeISO(){ return new Date().toISOString().slice(0,10); }
 // busca TODAS as duplas pendentes (idade programada, não rompidas) — sem limite de data
 async function buscarTodasPendentes(){
   const { data, error } = await sb.from('corpos_prova')
-    .select('id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)')
+    .select('id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)')
     .not('idade_prevista','is',null)
     .eq('descartado',false)
     .order('numero',{ascending:true});
@@ -390,6 +398,7 @@ async function buscarTodasPendentes(){
     const b=cp.betoneiras, c=b.concretagens;
     const chave=b.id+'|'+cp.idade_prevista+'|'+cp.data_prevista;
     if(!grp[chave]) grp[chave]={ key:chave, betoneiraId:b.id, nf:b.nota_fiscal, fck:b.fck,
+      slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
       obra:c.obras.nome, pav:c.pavimentos.nome, idade:cp.idade_prevista, prevista:cp.data_prevista, moldagem:c.data_concretagem, cps:[] };
     grp[chave].cps.push({id:cp.id, numero:cp.numero});
   });
@@ -405,20 +414,21 @@ async function buscarTodasPendentes(){
 // rompimentos já confirmados na data escolhida (agrupados por dupla)
 async function buscarRompidosDia(dataISO){
   const { data, error } = await sb.from('rompimentos')
-    .select('id,prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao,corpo_prova_id,corpos_prova!inner(numero,betoneira_id,betoneiras!inner(nota_fiscal,fck,concretagens!inner(obras!inner(nome),pavimentos!inner(nome))))')
+    .select('id,prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao,corpo_prova_id,corpos_prova!inner(numero,betoneira_id,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(obras!inner(nome),pavimentos!inner(nome))))')
     .eq('data_rompimento', dataISO)
     .order('id',{ascending:true});
   if(error) throw error;
   const itens = (data||[]).map(r=>{
     const cp=r.corpos_prova, b=cp.betoneiras, c=b.concretagens;
     return { rompId:r.id, cpId:r.corpo_prova_id, numero:cp.numero, betoneiraId:cp.betoneira_id,
-      nf:b.nota_fiscal, fck:b.fck, obra:c.obras.nome, pav:c.pavimentos.nome,
+      nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
+      obra:c.obras.nome, pav:c.pavimentos.nome,
       idade:r.idade_real, tf:r.prensa1_tf, mpa:r.resultado_mpa, obs:r.observacao };
   });
   const grp={};
   itens.forEach(it=>{
     const chave=it.betoneiraId+'|'+it.idade;
-    if(!grp[chave]) grp[chave]={ chave, nf:it.nf, fck:it.fck, obra:it.obra, pav:it.pav, idade:it.idade, itens:[] };
+    if(!grp[chave]) grp[chave]={ chave, nf:it.nf, fck:it.fck, slump:it.slump, tol:it.tol, desc:it.desc, obra:it.obra, pav:it.pav, idade:it.idade, itens:[] };
     grp[chave].itens.push(it);
   });
   const duplas=[];
@@ -591,7 +601,7 @@ function desenharRomper(){
   } else {
     html += `<div class="card" style="padding:0;overflow:hidden">
       <table><thead><tr>
-        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:110px">Idade</th><th style="width:120px">Prevista</th>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:150px">Traço</th><th style="width:110px">Idade</th><th style="width:120px">Prevista</th>
         <th style="width:210px">Corpo de prova · Prensa</th><th style="width:150px">Resultado</th><th>Observação</th>
       </tr></thead><tbody>`;
     lista.forEach(d=>{
@@ -608,6 +618,7 @@ function desenharRomper(){
       html += `<tr>
         <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
         <td class="mono">${d.nf}</td>
+        <td style="font-size:12px">${labelTraco(d)}</td>
         <td><select style="width:104px;padding:8px" onchange="reprogramarIdade('${d.duplaKey}',this.value,this)">${idadeOpts}</select></td>
         <td class="mono">${prevTxt}</td>
         <td>${inputs}</td>
@@ -628,7 +639,7 @@ function desenharRomper(){
   } else {
     html += `<div class="card" style="padding:0;overflow:hidden">
       <table><thead><tr>
-        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:55px">Idade</th>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:150px">Traço</th><th style="width:55px">Idade</th>
         <th style="width:230px">Prensas (tf)</th><th style="width:160px">Resultado</th><th>Observação</th><th style="width:170px"></th>
       </tr></thead><tbody>`;
     rompidosDia.forEach(d=>{
@@ -640,7 +651,7 @@ function desenharRomper(){
             <input style="width:68px;padding:8px" inputmode="decimal" value="${e.p[it.rompId]||''}" oninput="editRomp['${d.duplaId}'].p[${it.rompId}]=this.value"></span>`).join('');
         html += `<tr style="background:#fffdf4">
           <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
-          <td class="mono">${d.nf}</td><td class="mono">${d.idade}d</td>
+          <td class="mono">${d.nf}</td><td style="font-size:12px">${labelTraco(d)}</td><td class="mono">${d.idade}d</td>
           <td>${inputs}</td>
           <td class="muted" style="font-size:12px">recalcula ao salvar</td>
           <td><input style="width:100%;padding:8px" value="${e.obs||''}" oninput="editRomp['${d.duplaId}'].obs=this.value"></td>
@@ -651,7 +662,7 @@ function desenharRomper(){
         const prensasTxt = d.itens.map(it=>`<span class="mono" style="margin-right:10px">CP${it.numero}: ${it.tf!=null?Number(it.tf).toFixed(1):'—'}</span>`).join('');
         html += `<tr>
           <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
-          <td class="mono">${d.nf}</td><td class="mono">${d.idade}d</td>
+          <td class="mono">${d.nf}</td><td style="font-size:12px">${labelTraco(d)}</td><td class="mono">${d.idade}d</td>
           <td>${prensasTxt}</td>
           <td>${vereditoHTML(d.resultado, d.idade, d.fck)}</td>
           <td style="font-size:13px">${d.itens[0].obs||'<span class="muted">—</span>'}</td>
