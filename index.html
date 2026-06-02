@@ -33,7 +33,9 @@ button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
 .netdot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
 .netdot.off{background:var(--warn)}
 
-.pbody{padding:18px;overflow-y:auto;flex:1;max-width:560px;margin:0 auto;width:100%}
+.pbody{padding:18px;overflow-y:auto;flex:1;max-width:560px;margin:0 auto;width:100%;animation:telaIn .22s ease}
+@keyframes telaIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.pbody{animation:none}}
 .pfoot{padding:14px 16px;border-top:1px solid var(--line);background:#fff;
   display:flex;flex-direction:column;gap:10px;max-width:560px;margin:0 auto;width:100%;
   padding-bottom:calc(14px + env(safe-area-inset-bottom))}
@@ -115,6 +117,13 @@ const PERFIS_OK = ['admin','concretagem']; // quem pode usar o app de concretage
 
 function horaAgora(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
+// slump com vírgula automática: "165" -> "16,5" (último dígito é decimal)
+function mascararSlump(el){
+  let v = el.value.replace(/[^0-9]/g,'').slice(0,3);
+  if(v.length>=2){ el.value = v.slice(0,v.length-1)+','+v.slice(v.length-1); }
+  else { el.value = v; }
+  if(draft && draft.cur) draft.cur.slump = el.value;
+}
 // hora 24h com ":" automático (não precisa digitar o separador); padrão = hora do sistema
 function mascararHora(el){
   let v = el.value.replace(/[^0-9]/g,'').slice(0,4);
@@ -129,7 +138,7 @@ function mascararHora(el){
 let assinaturaCtx = null; // { concId, titulo, origem }
 let detalheOrigem = 'concluidas';
 let detalheAtual = null;
-function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:6, cpModo:'preset', motivoId:null, obs:'' }; }
+function novaBetoneira(){ return { tracoIdx:0, nf:'', lacre:'', hora:horaAgora(), slump:'', agua:'0', volume:'', aceita:true, cpQtd:4, cpModo:'preset', motivoId:null, obs:'' }; }
 
 // ---------- LOGIN ----------
 function telaLogin(msg){
@@ -290,7 +299,10 @@ function desenharBetoneira(){
   const tracoOpt = draft.tracos.map((t,i)=>`<option value="${i}" ${i===cur.tracoIdx?'selected':''}>fck ${t.fck}${t.slump?` · ${t.slump}±${t.tol}`:''}${t.desc?' · '+t.desc:''}</option>`).join('');
   const nBt = draft.betoneiras.length;
   let html = `
-    <div class="sub" style="margin:-2px 0 14px"><b>${draft.obraNome}</b> · ${draft.pavNome} · betoneira ${nBt+1}</div>
+    <div style="background:var(--accent-soft);border:1.5px solid #e3c3a6;border-radius:12px;padding:12px 14px;margin:-2px 0 16px">
+      <div style="font-size:22px;font-weight:800;color:var(--accent-ink);line-height:1.1">Betoneira ${nBt+1}</div>
+      <div class="sub" style="margin-top:4px"><b>${draft.obraNome}</b> · ${draft.pavNome}</div>
+    </div>
     <div class="row"><label class="fld">Traço</label><select onchange="draft.cur.tracoIdx=+this.value">${tracoOpt}</select></div>
     <div class="two" style="display:flex;gap:10px">
       <div class="row" style="flex:1"><label class="fld">Nota fiscal</label><input value="${cur.nf}" inputmode="numeric" onchange="draft.cur.nf=this.value" placeholder="NF"></div>
@@ -298,7 +310,7 @@ function desenharBetoneira(){
     </div>
     <div class="two" style="display:flex;gap:10px">
       <div class="row" style="flex:1"><label class="fld">Chegada</label><input value="${cur.hora}" inputmode="numeric" maxlength="5" placeholder="hh:mm" oninput="mascararHora(this)" onchange="draft.cur.hora=this.value"></div>
-      <div class="row" style="flex:1"><label class="fld">Slump medido</label><input value="${cur.slump}" inputmode="decimal" onchange="draft.cur.slump=this.value" placeholder="cm"></div>
+      <div class="row" style="flex:1"><label class="fld">Slump medido</label><input value="${cur.slump}" inputmode="numeric" maxlength="4" placeholder="cm" oninput="mascararSlump(this)" onchange="draft.cur.slump=this.value"></div>
     </div>
     <div class="two" style="display:flex;gap:10px">
       <div class="row" style="flex:1"><label class="fld">Água (L)</label><input value="${cur.agua}" inputmode="decimal" onchange="draft.cur.agua=this.value"></div>
@@ -331,10 +343,10 @@ function desenharBetoneira(){
 
   foot.style.display='';
   foot.innerHTML = `
-    <button class="bigbtn" onclick="finalizar()">Finalizar concretagem</button>
-    <button class="bigbtn ghost" onclick="proximaBetoneira()">Próxima betoneira ▸</button>`;
+    <button class="bigbtn" onclick="proximaBetoneira()">Próxima betoneira ▸</button>
+    <button class="bigbtn ghost" onclick="confirmarFinalizar()">Finalizar concretagem</button>`;
 }
-function setAceite(a){ draft.cur.aceita=a; if(a&&!draft.cur.cpQtd){draft.cur.cpQtd=6;draft.cur.cpModo='preset';} desenharBetoneira(); }
+function setAceite(a){ draft.cur.aceita=a; if(a&&!draft.cur.cpQtd){draft.cur.cpQtd=4;draft.cur.cpModo='preset';} desenharBetoneira(); }
 function setCp(n){ draft.cur.cpQtd=n; draft.cur.cpModo='preset'; desenharBetoneira(); }
 function setCpOutro(){ draft.cur.cpModo='outro'; draft.cur.cpQtd=0; desenharBetoneira(); }
 
@@ -406,6 +418,11 @@ async function gravarESeguir(modo){ // modo: 'proxima' | 'finalizar'
 }
 function proximaBetoneira(){ gravarESeguir('proxima'); }
 function finalizar(){ gravarESeguir('finalizar'); }
+// pergunta antes de finalizar (evita finalizar por engano)
+function confirmarFinalizar(){
+  if(!validarBetoneira()) return;
+  if(confirm('Tem certeza que deseja finalizar a concretagem?\n\nA betoneira atual será gravada e a concretagem encerrada.')) finalizar();
+}
 
 // telinha de confirmação após gravar a betoneira
 function telaConfirmaBetoneira(r, modo){
@@ -426,7 +443,8 @@ function telaConfirmaBetoneira(r, modo){
   body.innerHTML = `<div style="text-align:center;padding:14px 6px">${bloco}</div>`;
   foot.style.display='';
   if(modo==='finalizar'){
-    foot.innerHTML = `<button class="bigbtn" onclick="verResumoFinal()">Ver resumo da concretagem ▸</button>`;
+    foot.innerHTML = `<button class="bigbtn" onclick="verResumoFinal()">Ver resumo da concretagem ▸</button>
+      <button class="bigbtn ghost" onclick="novaBetoneiraNaTela()">‹ Voltar à concretagem</button>`;
   } else {
     foot.innerHTML = `<button class="bigbtn" onclick="novaBetoneiraNaTela()">Próxima betoneira ▸</button>
       <button class="bigbtn ghost" onclick="verResumoFinal()">Encerrar concretagem</button>`;
