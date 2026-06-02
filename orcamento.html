@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orçamento · Controle de Concreto</title>
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFBEE; --card:#FFFEF8; --ink:#0E0E0E; --muted:#7A746A;
+  --line:#EAE2C6; --accent:#BD5D27; --accent-ink:#8E4319; --accent-soft:#F7E7D7;
+  --ok:#3F945A; --warn:#FAA21B; --bad:#B02A20; --head:#F1EFE7;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:"Montserrat",sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+.mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
+
+.topbar{background:var(--ink);color:#fff;padding:14px 26px;display:flex;align-items:center;gap:14px}
+.topbar .logo{font-weight:800;border:2px solid #fff;border-radius:8px;padding:4px 10px;font-size:14px;letter-spacing:.4px}
+.topbar .ttl{font-weight:700;font-size:17px}
+.topbar .co{font-size:12px;color:#cfc9bd}
+.topbar .right{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px;color:#cfc9bd}
+.topbar .sair{background:none;border:0;color:#fff;font-weight:700;font-size:13px;text-decoration:underline}
+
+.tabs{display:flex;gap:8px;padding:16px 26px 0;border-bottom:1px solid var(--line);background:#fff;flex-wrap:wrap}
+.tab{padding:12px 22px;border:0;background:none;font-weight:700;font-size:15px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
+
+.wrap{max-width:1180px;margin:0 auto;padding:26px}
+.officehead h2{font-size:22px;margin:0 0 4px}
+.officehead p{color:var(--muted);margin:0 0 20px;font-size:14px}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.ch{font-weight:700;font-size:16px;margin-bottom:12px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--head);text-align:left;padding:10px 11px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#524d44;font-weight:700;border-bottom:1px solid var(--line)}
+td{padding:10px 11px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+.empty{text-align:center;color:var(--muted);padding:22px}
+.sumrow td{background:#faf7ec;font-weight:600}
+.lc{text-transform:none}
+
+select,input{font-size:15px;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23BD5D27' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:34px}
+
+.btn{padding:13px 26px;border-radius:11px;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:15px}
+.btn:disabled{opacity:.6}
+.btn.ghost{background:#fff;color:var(--accent-ink);border:2px solid var(--accent)}
+.btn.sm{padding:8px 14px;font-size:13px;border-radius:9px}
+.estado{text-align:center;color:var(--muted);padding:50px 20px;font-size:15px;line-height:1.6}
+.erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;padding:14px;font-size:14px;margin-bottom:16px}
+
+.chip{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border:1px solid #e3c3a6;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700}
+.chip.ok{background:#eaf3ec;color:var(--ok);border-color:#bcd2bf}
+.chip.bad{background:#fde8e2;color:#8a3220;border-color:#e0b09f}
+.chip.warn{background:#fcf0d8;color:#8a6a12;border-color:#e6cf95}
+.chip.mut{background:#ecebe4;color:#6f6a5e;border-color:#d9d2c0}
+.chip.info{background:var(--accent-soft);color:var(--accent-ink);border-color:#e3c3a6}
+.muted{color:var(--muted)}
+
+.filters{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
+.office-fld label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin-bottom:5px}
+
+.bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 18px;min-width:140px;flex:1}
+.kpi .v{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.kpi .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.kpi.alert .v{color:var(--bad)}
+
+.split{display:grid;grid-template-columns:236px 1fr;gap:18px;align-items:start}
+@media(max-width:860px){.split{grid-template-columns:1fr}}
+.elevcard{position:sticky;top:14px}
+.elevscroll{max-height:60vh;overflow-y:auto;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fdfcf5}
+.elev{display:flex;flex-direction:column-reverse;gap:3px}
+.pv{display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+  border:1.4px solid var(--line);background:#fff;border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:700;color:#1f3d29;min-height:26px}
+.pv.pv-empty{background:#fff;border-color:var(--line);color:var(--muted)}
+.pv.pv-parc{background:#fcf0d8;border-color:#e6cf95;color:#8a6a12}
+.pv.sel{outline:3px solid var(--accent);outline-offset:1px}
+.pv.pv-vol{background:#DCE7F2;border-color:#b8cde3;color:#2d5680}
+.pv .pvvol{margin-left:auto;font-weight:700;font-size:11px}
+.pv.pv-vol .pvvol{color:#2d5680}
+.sevleg{margin-top:12px}
+.sevbar{height:10px;border-radius:6px;background:linear-gradient(90deg,#eaf1f8,#9cc2e6,#4f8fc7,#1f5c96)}
+.sevlabels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:3px}
+.sevcap{font-size:11px;color:var(--muted);margin-top:5px}
+
+.cal{max-width:340px}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-nav button{border:1px solid var(--line);background:#fff;border-radius:8px;width:32px;height:32px;font-weight:700;color:var(--accent-ink);font-size:16px}
+.cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-head span{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px 0}
+.cal-cell{position:relative;text-align:center;padding:8px 0;border-radius:7px;font-size:12.5px;border:1px solid transparent;color:var(--muted)}
+.cal-cell.empty{border:0}
+.cal-cell.has{background:var(--accent-soft);border-color:#e3c3a6;color:var(--accent-ink);font-weight:700;cursor:pointer}
+.cal-cell.sel{outline:2px solid var(--accent)}
+.cal-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--accent)}
+
+.login-wrap{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px}
+.login-box{width:100%;max-width:380px}
+.login-logo{font-weight:800;border:3px solid var(--ink);border-radius:12px;padding:10px 16px;font-size:22px;text-align:center;width:fit-content;margin:0 auto 10px}
+.login-tit{color:var(--accent);font-size:20px;font-weight:700;text-align:center}
+.login-sub{color:var(--muted);font-size:13px;text-align:center;margin-bottom:22px}
+.login-box label{display:block;font-size:13px;font-weight:700;margin:0 0 6px}
+.login-box input{width:100%;margin-bottom:14px;min-height:50px}
+.login-box .btn{width:100%}
+</style>
+</head>
+<body>
+<div id="root"><div class="estado">Carregando…</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const SUPABASE_URL = "https://anzggndtjtwwrbxfguvm.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuemdnbmR0anR3d3JieGZndXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDU2MDcsImV4cCI6MjA5NTgyMTYwN30.Jcx-wvWnMAtKg1epCsTV3RGlW01nw4RSDy4RvYIm78Q";
+const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+const root = document.getElementById('root');
+const MPA_PER_TF = 1.2486;
+
+let userEmail='';
+let perfisUsuario=[];
+const PERFIS_OK=['admin','orcamento'];
+
+let OBRAS=[];
+let G = { aba:'dash', obra:null, fData:'', fPav:null, dados:null, calRef:null, showCal:false,
+  rel:{ de:'', ate:'', traco:'', pav:'', idade:'' } };
+
+function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
+function fmt(n,c){ if(n==null||isNaN(n)) return '—'; return Number(n).toFixed(c==null?1:c); }
+function ehFinal(idade){ return idade!=null && idade>=28; }
+function andarDe(nomePav){ const i=nomePav.indexOf(' - '); return i>=0 ? nomePav.slice(0,i).trim() : nomePav.trim(); }
+
+// ---- LOGIN ----
+function telaLogin(msg){
+  root.innerHTML = `
+    <div class="login-wrap"><div class="login-box">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Orçamento</div>
+      <div class="login-sub">Controle Tecnológico de Concreto</div>
+      <label>E-mail</label><input id="li_email" type="email" autocapitalize="off" placeholder="seu@email.com">
+      <label>Senha</label><input id="li_senha" type="password" placeholder="••••••••">
+      ${msg?`<div class="erro">${msg}</div>`:''}
+      <button class="btn" id="li_btn" onclick="entrar()">Entrar</button>
+    </div></div>`;
+}
+async function entrar(){
+  const email=document.getElementById('li_email').value.trim();
+  const senha=document.getElementById('li_senha').value;
+  if(!email||!senha){ telaLogin('Preencha e-mail e senha.'); return; }
+  const btn=document.getElementById('li_btn'); btn.disabled=true; btn.textContent='Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({email,password:senha});
+  if(error){ telaLogin('Não consegui entrar: '+error.message); return; }
+  userEmail=data.user.email; iniciar();
+}
+async function sair(){ await sb.auth.signOut(); userEmail=''; telaLogin(''); }
+function telaSemAcesso(msg){
+  root.innerHTML = `
+    <div class="login-wrap"><div class="login-box" style="text-align:center">
+      <div class="login-logo">GT&amp;ABC</div>
+      <div class="login-tit">Sem acesso</div>
+      <div class="login-sub" style="margin-bottom:14px">O usuário ${userEmail} não tem permissão para o painel do Orçamento${perfisUsuario.length?` (perfil: ${perfisUsuario.join(', ')})`:''}.<br>Fale com a administradora.</div>
+      ${msg?`<div class="login-sub" style="font-size:12px;color:#b02a20;margin-bottom:14px">detalhe técnico: ${msg}</div>`:''}
+      <button class="btn" onclick="sair()">Sair</button>
+    </div></div>`;
+}
+
+function casca(){
+  return `
+    <div class="topbar">
+      <div class="logo">GT&amp;ABC</div>
+      <div><div class="ttl">Orçamento</div><div class="co">Controle Tecnológico de Concreto</div></div>
+      <div class="right"><span>${userEmail}</span><button class="sair" onclick="sair()">Sair</button></div>
+    </div>
+    <div class="tabs">
+      <button class="tab ${G.aba==='dash'?'on':''}" onclick="irAba('dash')">Dashboard</button>
+      <button class="tab ${G.aba==='rel'?'on':''}" onclick="irAba('rel')">Relatórios</button>
+    </div>
+    <div class="wrap" id="wrap"></div>`;
+}
+function irAba(a){ G.aba=a; render(); }
+function render(){
+  root.innerHTML = casca();
+  if(G.aba==='dash') desenharDash();
+  else desenharRelatorios();
+  // garante que o seletor de obra mostre a obra atual (evita ele "voltar" visualmente)
+  const sel=document.getElementById('selObra');
+  if(sel) sel.value = String(G.obra);
+}
+
+async function iniciar(){
+  root.innerHTML = '<div class="estado">Carregando…</div>';
+  let err='';
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session){ err='Sessão não encontrada. Saia e entre novamente.'; }
+    else { const { data, error } = await sb.rpc('meus_perfis'); if(error) err=error.message; else perfisUsuario=Array.isArray(data)?data:[]; }
+  }catch(e){ err=(e&&e.message)?e.message:String(e); }
+  if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(err); return; }
+  try{
+    const { data, error } = await sb.from('obras').select('id,nome').order('nome');
+    if(error) throw error;
+    OBRAS=data||[];
+    if(!OBRAS.length){ root.innerHTML=casca(); document.getElementById('wrap').innerHTML='<div class="estado">Nenhuma obra cadastrada.</div>'; return; }
+    G.obra=OBRAS[0].id;
+    await carregarDados();
+    render();
+  }catch(e){ root.innerHTML=casca(); document.getElementById('wrap').innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+
+async function carregarDados(){
+  G.dados=null;
+  const obraId=G.obra;
+  G.obraNome=(OBRAS.find(o=>String(o.id)===String(obraId))||{}).nome||'';
+  const { data:pavs, error:e0 } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
+  if(e0) throw e0;
+
+  // Filtra a OBRA já na consulta (via relação), trazendo só o que é desta obra.
+  const romps = await pegarTudo('rompimentos',
+    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))))',
+    q=>q.eq('corpos_prova.betoneiras.concretagens.obra_id', obraId));
+  const cpsPend = await pegarTudo('corpos_prova',
+    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))),rompimentos(id)',
+    q=>q.eq('betoneiras.concretagens.obra_id', obraId));
+  const recus = await pegarTudo('betoneiras',
+    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome)),motivos_recusa(nome)',
+    q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
+
+  const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
+    .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
+      const mpa=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null);
+      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
+               slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa }; });
+  const nfComFinal=new Set(R.filter(r=>ehFinal(r.idade)).map(r=>r.nf));
+  const semRomp = cp => !cp.rompimentos || (Array.isArray(cp.rompimentos)?cp.rompimentos.length===0:!cp.rompimentos);
+  const P = (cpsPend||[]).filter(cp=>!cp.descartado && semRomp(cp) && cp.betoneiras&&cp.betoneiras.concretagens && cp.idade_prevista!=null && cp.idade_prevista<28)
+    .map(cp=>{ const b=cp.betoneiras,c=b.concretagens,p=c.pavimentos;
+      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista }; })
+    .filter(x=>!nfComFinal.has(x.nf));
+  const X = (recus||[]).filter(b=>!b.aceita && b.concretagens)
+    .map(b=>{ const c=b.concretagens,p=c.pavimentos;
+      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—' }; });
+
+  const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
+  G.dados={ pavs, R, P, X, datas };
+  G.calRef = datas.length ? new Date(datas[0]+'T00:00:00') : new Date();
+  if(datas.length){ G.rel.de = datas[datas.length-1]; G.rel.ate = datas[0]; }
+  else { G.rel.de=''; G.rel.ate=''; }
+  G.rel.traco=''; G.rel.pav=''; G.rel.idade='';
+}
+async function trocarObra(id){
+  G.obra=id; G.fData=''; G.fPav=null;
+  const wrap=document.getElementById('wrap'); if(wrap) wrap.innerHTML='<div class="estado">Carregando dados da obra…</div>';
+  try{ await carregarDados(); render(); }
+  catch(e){ const w=document.getElementById('wrap'); if(w) w.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+async function pegarTudo(tabela, cols, mod){
+  let todos=[], de=0; const passo=1000;
+  while(true){
+    let q = sb.from(tabela).select(cols);
+    if(mod) q = mod(q);
+    q = q.range(de, de+passo-1);
+    const { data, error } = await q;
+    if(error) throw error; todos=todos.concat(data||[]); if(!data||data.length<passo) break; de+=passo;
+  }
+  return todos;
+}
+
+function duplasFinais(romps){
+  const map={};
+  romps.filter(r=>ehFinal(r.idade)).forEach(r=>{ const k=r.nf+'|'+r.idade;
+    if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,dataRomp:r.dataRomp,slumpMed:r.slumpMed,agua:r.agua,mpas:[] };
+    map[k].mpas.push(r.mpa); });
+  return Object.values(map).map(d=>{ const melhor=Math.max(...d.mpas.filter(v=>v!=null),-Infinity);
+    return { ...d, resultado:isFinite(melhor)?melhor:null, conforme:isFinite(melhor)?melhor>=(d.fck||0):null }; });
+}
+// cor azul proporcional ao volume (0 = claro, volume máx do prédio = azul forte)
+function volColor(frac){
+  const p=Math.max(0,Math.min(frac,1));
+  const stops=[[234,241,248],[156,194,230],[79,143,199],[31,92,150]]; // claro → azul forte
+  const x=p*(stops.length-1); const i=Math.min(Math.floor(x),stops.length-2); const t=x-i;
+  const c=k=>Math.round(stops[i][k]+(stops[i+1][k]-stops[i][k])*t);
+  return `rgb(${c(0)},${c(1)},${c(2)})`;
+}
+function labelTraco(d){
+  const has=v=>v!==null&&v!==undefined&&String(v).trim()!=='';
+  let s=`fck ${has(d.fck)?d.fck:'—'}`;
+  if(has(d.slump)) s+=` · ${d.slump}±${has(d.tol)?d.tol:'?'}`;
+  if(has(d.desc)) s+=` · ${d.desc}`;
+  return s;
+}
+function dadosFiltrados(){
+  const D=G.dados; let R=D.R,P=D.P,X=D.X;
+  if(G.fData){ R=R.filter(r=>r.data===G.fData); P=P.filter(p=>p.data===G.fData); X=X.filter(x=>x.data===G.fData); }
+  return {R,P,X};
+}
+
+// ---- DASHBOARD DE VOLUMES ----
+function desenharDash(){
+  const wrap=document.getElementById('wrap'); const D=G.dados;
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
+  const {R,X}=dadosFiltrados();
+  // volume aceito por NF (uma NF aparece uma vez), a partir dos rompimentos
+  const aceitas=volumesAceitos(R);
+
+  // monta andares e soma volume por andar
+  const andares=[]; const andarMap={}; const ordemAndar={}; const pavAndar={};
+  D.pavs.forEach(p=>{ const a=andarDe(p.nome); if(!(a in andarMap)){ andarMap[a]={vol:0,nfs:0,pavIds:[]}; andares.push(a); ordemAndar[a]=p.ordem; } andarMap[a].pavIds.push(p.id); pavAndar[p.id]=a; });
+  aceitas.forEach(r=>{ const a=pavAndar[r.pavId]; if(a&&andarMap[a]){ andarMap[a].vol+=r.vol; andarMap[a].nfs++; } });
+  andares.sort((a,b)=>ordemAndar[a]-ordemAndar[b]);
+
+  const blocks=andares.map(a=>{
+    const s=andarMap[a]; const tem=s.vol>0; const sel=G.fPav===a?'sel':'';
+    const cls=tem?'pv-vol':'pv-empty';
+    const tip=tem?`${a}: ${fmt(s.vol)} m³ · ${s.nfs} NF`:`${a}: sem concreto`;
+    const volTxt=tem?`<span class="pvvol">${fmt(s.vol)} m³</span>`:'';
+    return `<button class="pv ${cls} ${sel}" title="${tip}" onclick="filtrarAndar('${a.replace(/'/g,"\\'")}')"><span class="pvn">${a}</span>${volTxt}</button>`;
+  }).join('');
+
+  // detalhe por andar
+  let detA=aceitas, detX=X;
+  if(G.fPav){ const ids=new Set((andarMap[G.fPav]||{pavIds:[]}).pavIds);
+    detA=aceitas.filter(r=>ids.has(r.pavId)); detX=X.filter(x=>ids.has(x.pavId)); }
+
+  const totalVol = (G.fPav?detA:aceitas).reduce((s,r)=>s+r.vol,0);
+  const totalNF  = (G.fPav?detA:aceitas).length;
+  const andaresComConc = andares.filter(a=>andarMap[a].vol>0).length;
+  const kpi3=G.fPav
+    ? `<div class="kpi"><div class="v" style="font-size:14px;line-height:1.5">${[...new Set(detA.map(x=>fmtData(x.data)))].filter(Boolean).join('<br>')||'—'}</div><div class="k">Data da concretagem</div></div>`
+    : `<div class="kpi"><div class="v">${andaresComConc}</div><div class="k">Andares concretados</div></div>`;
+
+  const rowA=r=>`<tr><td>${r.pav}</td><td class="mono">${r.nf}</td><td>${labelTraco(r)}</td><td class="mono">${fmt(r.vol)}</td><td class="mono">${fmtData(r.data)}</td></tr>`;
+  const rowX=x=>`<tr><td>${x.pav}</td><td class="mono">${x.nf}</td><td>${labelTraco(x)}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
+  const volFooter=(arr,cols)=>{ const tot=arr.reduce((s,r)=>s+(r.vol||0),0); return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${arr.length} NF</td></tr>`; };
+
+  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
+
+  wrap.innerHTML=`
+    <div class="officehead"><h2>Dashboard de volumes</h2><p>Elevação da torre por volume de concreto — andares concretados em azul, com o volume total. Clique para o detalhe.</p></div>
+    <div class="filters">
+      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <button class="btn ghost sm" onclick="G.showCal=!G.showCal;render()">${G.showCal?'ocultar calendário':'data da concretagem'}</button>
+      ${G.fData?`<button class="btn ghost sm" onclick="G.fData='';render()">✕ ${fmtData(G.fData)}</button>`:''}
+      ${G.fPav?`<button class="btn ghost sm" onclick="G.fPav=null;render()">✕ ${G.fPav}</button>`:''}
+    </div>
+    ${G.showCal?calendarioHTML():''}
+    <div class="bar">
+      <div class="kpi"><div class="v">${fmt(totalVol)}</div><div class="k">Volume${G.fPav?'':' total'} <span class="lc">(m³)</span></div></div>
+      <div class="kpi"><div class="v">${totalNF}</div><div class="k">Notas fiscais</div></div>
+      ${kpi3}
+    </div>
+    <div class="split">
+      <div class="card elevcard">
+        <div style="font-weight:700;margin-bottom:2px">Elevação · volume</div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">${obraNome} · ${andares.length} andares</div>
+        <div class="elevscroll"><div class="elev">${blocks}</div></div>
+        <div class="sevcap" style="margin-top:10px"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#DCE7F2;border:1px solid #b8cde3;vertical-align:-1px;margin-right:5px"></i>andar com concreto · <i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#fff;border:1px solid var(--line);vertical-align:-1px;margin:0 5px"></i>sem concreto</div>
+        <div class="sub muted" style="margin-top:6px;font-size:11.5px">Clique num andar para filtrar o detalhe.</div>
+      </div>
+      <div>
+        <div class="card"><div class="ch">Notas fiscais por pavimento${G.fPav?` · ${G.fPav}`:''}</div>
+          <table><thead><tr><th>Pavimento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Concretagem</th></tr></thead>
+          <tbody>${detA.length?detA.map(rowA).join('')+volFooter(detA,5):'<tr><td colspan="5" class="empty">Sem notas para o filtro.</td></tr>'}</tbody></table></div>
+        <div class="card"><div class="ch">Betoneiras recusadas <span class="chip bad">${detX.length}</span>${G.fPav?` · ${G.fPav}`:''}</div>
+          <table><thead><tr><th>Pavimento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Data</th><th>Motivo</th></tr></thead>
+          <tbody>${detX.length?detX.map(rowX).join('')+volFooter(detX,6):'<tr><td colspan="6" class="empty">Nenhuma recusa.</td></tr>'}</tbody></table></div>
+      </div>
+    </div>`;
+}
+// volume aceito por NF (uma vez por nota), a partir dos rompimentos da obra
+function volumesAceitos(R){
+  const map={};
+  R.forEach(r=>{ if(!map[r.nf]) map[r.nf]={pavId:r.pavId,pav:r.pav,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,data:r.data}; });
+  return Object.values(map);
+}
+function filtrarAndar(a){ G.fPav=(G.fPav===a)?null:a; render(); }
+
+// ---- CALENDÁRIO ----
+const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function calendarioHTML(){
+  const ref = G.calRef || new Date();
+  const ano=ref.getFullYear(), mes=ref.getMonth();
+  const diasConc=new Set(G.dados.datas);
+  const primeiroDia=new Date(ano,mes,1).getDay();
+  const totalDias=new Date(ano,mes+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<primeiroDia;i++) cells.push('');
+  for(let d=1;d<=totalDias;d++) cells.push(d);
+  const body=cells.map(d=>{
+    if(d==='') return '<div class="cal-cell empty"></div>';
+    const iso=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const has=diasConc.has(iso); const sel=G.fData===iso?'sel':'';
+    if(has) return `<div class="cal-cell has ${sel}" title="Concretagem em ${fmtData(iso)}" onclick="selData('${iso}')">${d}<i class="cal-dot"></i></div>`;
+    return `<div class="cal-cell">${d}</div>`;
+  }).join('');
+  return `<div class="card cal">
+    <div class="cal-nav"><button onclick="mudarMes(-1)">‹</button>
+      <div style="font-weight:700">${MESES[mes]} / ${ano}</div>
+      <button onclick="mudarMes(1)">›</button></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">Dias com concretagem ficam <b>destacados</b>. Clique para filtrar${G.fData?` · filtrando ${fmtData(G.fData)}`:''}.</div>
+    <div class="cal-head">${['D','S','T','Q','Q','S','S'].map(x=>`<span>${x}</span>`).join('')}</div>
+    <div class="cal-grid">${body}</div>
+  </div>`;
+}
+function mudarMes(delta){ const r=G.calRef||new Date(); G.calRef=new Date(r.getFullYear(), r.getMonth()+delta, 1); render(); }
+function selData(iso){ G.fData = (G.fData===iso)?'':iso; render(); }
+
+// ---- RELATÓRIOS (uma aba, dois cards de filtros, sem tabela) ----
+function desenharRelatorios(){
+  const wrap=document.getElementById('wrap'); const D=G.dados;
+  const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
+  // opções de traço, pavimento e idade a partir dos dados da obra
+  const tracos=[...new Set(D.R.concat(D.X).map(r=>labelTraco(r)))].sort();
+  const pavs=[...new Set(D.pavs.map(p=>p.nome))];
+  const idades=[...new Set(D.R.filter(r=>ehFinal(r.idade)).map(r=>r.idade))].sort((a,b)=>a-b);
+  const opt=(arr,sel,fmtfn)=>['<option value="">Todos</option>'].concat(arr.map(v=>`<option value="${v}" ${String(v)===String(sel)?'selected':''}>${fmtfn?fmtfn(v):v}</option>`)).join('');
+
+  const filtros = `
+    <div class="filters" style="margin-bottom:14px">
+      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Período — de (concretagem)</label><input type="date" value="${G.rel.de}" onchange="G.rel.de=this.value;render()"></div>
+      <div class="office-fld"><label>Até (concretagem)</label><input type="date" value="${G.rel.ate}" onchange="G.rel.ate=this.value;render()"></div>
+      <div class="office-fld"><label>Traço</label><select style="width:200px" onchange="G.rel.traco=this.value;render()">${opt(tracos,G.rel.traco)}</select></div>
+      <div class="office-fld"><label>Pavimento</label><select style="width:180px" onchange="G.rel.pav=this.value;render()">${opt(pavs,G.rel.pav)}</select></div>
+      <div class="office-fld"><label>Idade</label><select style="width:120px" onchange="G.rel.idade=this.value;render()">${opt(idades,G.rel.idade,v=>v+' dias')}</select></div>
+    </div>`;
+
+  const nQua=relQuantidades().length;
+
+  wrap.innerHTML=`
+    <div class="officehead"><h2>Relatórios</h2><p>Relatório de quantidades por nota fiscal. O período se refere à <b>data da concretagem</b>.</p></div>
+    ${filtros}
+    <div class="card">
+      <div class="ch">Relatório de quantidades <span class="chip">${nQua} linha(s)</span></div>
+      <div class="muted" style="font-size:13px;margin-bottom:12px">Recebimento: volume e aceite/recusa por nota fiscal, com somatório por traço (aceitas e recusadas separadas).</div>
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px">Colunas</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${['Pavimento','Data','NF','Traço','Volume (m³)','Aceite/Recusa'].map(c=>`<span class="chip mut">${c}</span>`).join('')}</div>
+      <div style="display:flex;gap:10px"><button class="btn sm" onclick="exportarRelPDF('quant')">Gerar PDF</button><button class="btn ghost sm" onclick="exportarRelExcel('quant')">Gerar Excel</button></div>
+    </div>`;
+}
+// aplica filtros do relatório (período por data de concretagem, traço, pav, idade)
+function passaFiltroRel(r, comIdade){
+  if(G.rel.de && r.data < G.rel.de) return false;
+  if(G.rel.ate && r.data > G.rel.ate) return false;
+  if(G.rel.traco && labelTraco(r)!==G.rel.traco) return false;
+  if(G.rel.pav && r.pav!==G.rel.pav) return false;
+  if(comIdade && G.rel.idade && String(r.idade)!==String(G.rel.idade)) return false;
+  return true;
+}
+function relResultados(){
+  return duplasFinais(G.dados.R).filter(d=>passaFiltroRel(d,true))
+    .sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
+}
+function relQuantidades(){
+  // betoneiras aceitas (por NF, via rompimentos) + recusadas
+  const map={};
+  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
+  const aceitas=Object.values(map);
+  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada'}));
+  return aceitas.concat(recus).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
+}
+
+// ---- PDFs ----
+function pdfHeader(doc,titulo){
+  const pageW=doc.internal.pageSize.getWidth(); const accent=[189,93,39], muted=[122,116,106];
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(14,14,14);
+  doc.text('GT&ABC · Controle Tecnológico de Concreto', 12, 14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
+  doc.text(obraNome ? (titulo+' — '+obraNome) : titulo, 12, 20);
+  doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]);
+  doc.text('Gerado em '+fmtData(new Date().toISOString())+(G.fData?'  ·  concretagem '+fmtData(G.fData):''), pageW-12, 14, {align:'right'});
+}
+function exportarDashPDF(){
+  if(!window.jspdf||!window.jspdf.jsPDF){ alert('PDF não carregou. Recarregue a página.'); return; }
+  const {R,X}=dadosFiltrados(); const finais=duplasFinais(R);
+  const conf=finais.filter(d=>d.conforme===true).length,nc=finais.filter(d=>d.conforme===false).length;
+  const pct=finais.length?Math.round(conf/finais.length*100):0;
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const accent=[189,93,39]; pdfHeader(doc,'Relatório de Conformidade');
+  doc.setTextColor(14,14,14); doc.setFontSize(9);
+  doc.text(`Conformidade ${pct}%  ·  ${conf} conforme  ·  ${nc} não conforme`, 12, 27);
+  doc.autoTable({ head:[['Pavimento','NF','Vol (m³)','Traço','Idade','Resultado (MPa)','Conformidade']],
+    body:finais.map(d=>[d.pav,String(d.nf),fmt(d.vol),labelTraco(d),d.idade+'d',fmt(d.resultado),d.conforme?'Conforme':'Não conforme']),
+    startY:31, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+    didParseCell:dt=>{ if(dt.section==='body'&&dt.column.index===6&&dt.cell.raw==='Não conforme'){dt.cell.styles.textColor=[176,42,32];dt.cell.styles.fontStyle='bold';} },
+    margin:{left:12,right:12} });
+  if(X.length){ doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(accent[0],accent[1],accent[2]);
+    doc.text('Betoneiras recusadas',12,doc.lastAutoTable.finalY+7);
+    doc.autoTable({ head:[['Pavimento','NF','Vol (m³)','fck','Data','Motivo']],
+      body:X.map(x=>[x.pav,String(x.nf),fmt(x.vol),String(x.fck||'—'),fmtData(x.data),x.motivo]),
+      startY:doc.lastAutoTable.finalY+10, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+      headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8}, margin:{left:12,right:12} }); }
+  doc.save('conformidade_'+new Date().toISOString().slice(0,10)+'.pdf');
+}
+function exportarRelPDF(tipo){
+  if(!window.jspdf||!window.jspdf.jsPDF){ alert('PDF não carregou. Recarregue a página.'); return; }
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const accent=[189,93,39];
+  if(tipo==='quant'){
+    pdfHeader(doc,'Relatório de Quantidades');
+    const todas=relQuantidades();
+    const aceitas=todas.filter(r=>r.aceite==='Aceita');
+    const recusadas=todas.filter(r=>r.aceite==='Recusada');
+    const head=['Pavimento','Data','NF','Traço','Volume (m³)'];
+    const bloco=(titulo, arr, startY)=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
+      doc.text(titulo+'  ('+arr.length+')', 12, startY);
+      doc.autoTable({ head:[head], body:arr.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)]),
+        startY:startY+3, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+        headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+        columnStyles:{4:{halign:'right'}}, margin:{left:12,right:12} });
+      // somatório por traço
+      const porTraco=somaPorTraco(arr);
+      doc.autoTable({ body:porTraco.map(t=>[{content:'Total — '+t.traco,styles:{fontStyle:'bold'}},{content:fmt(t.vol)+' m³',styles:{halign:'right',fontStyle:'bold'}}])
+          .concat([[{content:'TOTAL GERAL',styles:{fontStyle:'bold'}},{content:fmt(arr.reduce((s,r)=>s+r.vol,0))+' m³',styles:{halign:'right',fontStyle:'bold'}}]]),
+        startY:doc.lastAutoTable.finalY+1, theme:'plain',
+        styles:{font:'helvetica',fontSize:8.5,cellPadding:1.3,textColor:[14,14,14]},
+        columnStyles:{0:{cellWidth:200}}, margin:{left:12,right:12} });
+      return doc.lastAutoTable.finalY;
+    };
+    let y=bloco('Betoneiras aceitas', aceitas, 27);
+    bloco('Betoneiras recusadas', recusadas, y+9);
+    doc.save('quantidades_'+new Date().toISOString().slice(0,10)+'.pdf');
+    return;
+  }
+  pdfHeader(doc,'Relatório de Resultados');
+  const rows=relResultados();
+  const head=['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'];
+  doc.autoTable({ head:[head], body:rows.map(d=>[d.pav,fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']),
+    startY:27, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+    didParseCell:dt=>{ if(dt.section==='body'&&dt.column.index===7&&dt.cell.raw==='Não conforme'){dt.cell.styles.textColor=[176,42,32];dt.cell.styles.fontStyle='bold';} },
+    margin:{left:12,right:12} });
+  doc.save('resultados_'+new Date().toISOString().slice(0,10)+'.pdf');
+}
+// soma de volume por traço completo
+function somaPorTraco(arr){
+  const map={};
+  arr.forEach(r=>{ if(!map[r.traco]) map[r.traco]={traco:r.traco,vol:0}; map[r.traco].vol+=(r.vol||0); });
+  return Object.values(map).sort((a,b)=>a.traco.localeCompare(b.traco));
+}
+function exportarRelExcel(tipo){
+  if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
+  const wb=XLSX.utils.book_new();
+  // escreve um título "Relatório — Obra" no topo da aba e os dados abaixo
+  const comTitulo=(ws, titulo, ncols)=>{
+    XLSX.utils.sheet_add_aoa(ws, [[titulo+' — '+obraNome]], {origin:'A1'});
+    return ws;
+  };
+  if(tipo==='quant'){
+    const todas=relQuantidades();
+    const aceitas=todas.filter(r=>r.aceite==='Aceita');
+    const recusadas=todas.filter(r=>r.aceite==='Recusada');
+    const monta=(arr,titulo)=>{
+      const linhas=arr.map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol}));
+      linhas.push({});
+      somaPorTraco(arr).forEach(t=>linhas.push({Pavimento:'TOTAL',Traço:t.traco,'Volume (m³)':Number(t.vol.toFixed(1))}));
+      linhas.push({Pavimento:'TOTAL GERAL','Volume (m³)':Number(arr.reduce((s,r)=>s+r.vol,0).toFixed(1))});
+      const ws=XLSX.utils.json_to_sheet(linhas, {origin:'A3'});
+      XLSX.utils.sheet_add_aoa(ws, [[titulo+' — '+obraNome]], {origin:'A1'});
+      return ws;
+    };
+    XLSX.utils.book_append_sheet(wb, monta(aceitas,'Quantidades · Aceitas'), 'Aceitas');
+    XLSX.utils.book_append_sheet(wb, monta(recusadas,'Quantidades · Recusadas'), 'Recusadas');
+    XLSX.writeFile(wb,'quantidades_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    return;
+  }
+  const rows=relResultados().map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'}));
+  const ws=XLSX.utils.json_to_sheet(rows, {origin:'A3'});
+  XLSX.utils.sheet_add_aoa(ws, [['Relatório de Resultados — '+obraNome]], {origin:'A1'});
+  XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
+  XLSX.writeFile(wb,'resultados_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+(async function(){
+  const { data } = await sb.auth.getSession();
+  if(data.session){ userEmail=data.session.user.email; iniciar(); }
+  else telaLogin('');
+})();
+</script>
+</body>
+</html>
