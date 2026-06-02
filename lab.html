@@ -158,7 +158,7 @@ function casca(){
     <div class="topbar">
       <div class="logo">GT&amp;ABC</div>
       <div><div class="ttl">Laboratório</div><div class="co">Controle Tecnológico de Concreto</div></div>
-      <div class="right"><span>${userEmail}</span>${perfisUsuario.includes('admin')?`<button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="exportarBackup()">Exportar tudo</button>`:''}<button class="sair" onclick="sair()">Sair</button></div>
+      <div class="right"><span>${userEmail}</span>${perfisUsuario.includes('admin')?`<button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="abrirAuditoria()">Auditoria</button><button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="exportarBackup()">Exportar tudo</button>`:''}<button class="sair" onclick="sair()">Sair</button></div>
     </div>
     <div class="tabs">
       <button class="tab ${abaAtual==='programar'?'on':''}" onclick="irAba('programar')">Programar idades</button>
@@ -168,6 +168,93 @@ function casca(){
     <div class="wrap" id="wrap"></div>`;
 }
 function irAba(a){ abaAtual=a; render(); }
+
+// ---- AUDITORIA (admin) ----
+let AUD = { linhas:[], fUser:'', fAcao:'', fTabela:'', fDe:'', fAte:'' };
+const ACAO_PT = { INSERT:'Criou', UPDATE:'Editou', DELETE:'Apagou' };
+const TAB_PT = { concretagens:'Concretagem', betoneiras:'Betoneira', corpos_prova:'Corpo de prova', rompimentos:'Rompimento' };
+
+async function abrirAuditoria(){
+  if(!perfisUsuario.includes('admin')) return;
+  abaAtual='auditoria';
+  const wrap=document.getElementById('wrap');
+  wrap.innerHTML='<div class="officehead"><h2>Auditoria</h2></div><div class="estado">Carregando registros…</div>';
+  try{
+    // puxa os registros (paginado), mais recentes primeiro
+    let todos=[], de=0; const passo=1000;
+    while(true){
+      const { data, error } = await sb.from('auditoria').select('*').order('feito_em',{ascending:false}).range(de,de+passo-1);
+      if(error) throw error;
+      todos=todos.concat(data||[]);
+      if(!data||data.length<passo) break;
+      de+=passo; if(de>=10000) break; // teto de segurança
+    }
+    AUD.linhas=todos;
+    desenharAuditoria();
+  }catch(e){
+    wrap.innerHTML='<div class="erro"><b>Não consegui carregar a auditoria.</b><br>'+(e.message||e)+'</div>';
+  }
+}
+function audFiltrada(){
+  return AUD.linhas.filter(l=>{
+    if(AUD.fUser && (l.user_email||'')!==AUD.fUser) return false;
+    if(AUD.fAcao && l.acao!==AUD.fAcao) return false;
+    if(AUD.fTabela && l.tabela!==AUD.fTabela) return false;
+    const dia=(l.feito_em||'').slice(0,10);
+    if(AUD.fDe && dia<AUD.fDe) return false;
+    if(AUD.fAte && dia>AUD.fAte) return false;
+    return true;
+  });
+}
+function fmtDataHora(iso){
+  if(!iso) return '—';
+  const d=new Date(iso);
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function desenharAuditoria(){
+  const wrap=document.getElementById('wrap');
+  const usuarios=[...new Set(AUD.linhas.map(l=>l.user_email).filter(Boolean))].sort();
+  const opt=(arr,sel,fmtfn)=>['<option value="">Todos</option>'].concat(arr.map(v=>`<option value="${v}" ${v===sel?'selected':''}>${fmtfn?fmtfn(v):v}</option>`)).join('');
+  const lista=audFiltrada();
+
+  const linhas = lista.slice(0,500).map(l=>`<tr>
+    <td class="mono" style="white-space:nowrap">${fmtDataHora(l.feito_em)}</td>
+    <td style="font-size:12px">${l.user_email||'<span class="muted">sistema/importação</span>'}</td>
+    <td>${ACAO_PT[l.acao]||l.acao}</td>
+    <td>${TAB_PT[l.tabela]||l.tabela}</td>
+    <td style="font-size:12px">${l.resumo||'—'}</td>
+  </tr>`).join('');
+
+  wrap.innerHTML=`
+    <div class="officehead"><h2>Auditoria</h2><p>Registro de quem criou, editou ou apagou dados — com data e hora. Começa a registrar a partir da ativação.</p></div>
+    <div class="filters" style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+      <div class="office-fld"><label>Usuário</label><select onchange="AUD.fUser=this.value;desenharAuditoria()">${opt(usuarios,AUD.fUser)}</select></div>
+      <div class="office-fld"><label>Ação</label><select onchange="AUD.fAcao=this.value;desenharAuditoria()">${opt(['INSERT','UPDATE','DELETE'],AUD.fAcao,v=>ACAO_PT[v])}</select></div>
+      <div class="office-fld"><label>Tipo</label><select onchange="AUD.fTabela=this.value;desenharAuditoria()">${opt(['concretagens','betoneiras','corpos_prova','rompimentos'],AUD.fTabela,v=>TAB_PT[v])}</select></div>
+      <div class="office-fld"><label>De</label><input type="date" value="${AUD.fDe}" onchange="AUD.fDe=this.value;desenharAuditoria()"></div>
+      <div class="office-fld"><label>Até</label><input type="date" value="${AUD.fAte}" onchange="AUD.fAte=this.value;desenharAuditoria()"></div>
+      <button class="btn ghost" style="padding:10px 16px;font-size:14px" onclick="exportarAuditoria()">Exportar Excel</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr><th style="width:150px">Data / hora</th><th>Usuário</th><th style="width:90px">Ação</th><th style="width:130px">Tipo</th><th>Detalhe</th></tr></thead>
+      <tbody>${linhas||`<tr><td colspan="5" class="estado" style="padding:30px">Nenhum registro para o filtro.</td></tr>`}</tbody></table>
+    </div>
+    <div class="cs" style="margin-top:10px">${lista.length} registro(s)${lista.length>500?' — mostrando os 500 mais recentes; use os filtros ou exporte o Excel para ver todos':''}.</div>`;
+}
+function exportarAuditoria(){
+  if(!window.XLSX){ alert('A biblioteca de planilha não carregou. Recarregue a página.'); return; }
+  const lista=audFiltrada().map(l=>({
+    'Data/hora': fmtDataHora(l.feito_em),
+    'Usuário': l.user_email||'sistema/importação',
+    'Ação': ACAO_PT[l.acao]||l.acao,
+    'Tipo': TAB_PT[l.tabela]||l.tabela,
+    'Detalhe': l.resumo||''
+  }));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lista), 'Auditoria');
+  XLSX.writeFile(wb,'auditoria_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
 
 // ---- BACK-UP COMPLETO (Excel, todas as tabelas) ----
 async function exportarBackup(){
