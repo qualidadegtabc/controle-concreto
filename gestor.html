@@ -125,7 +125,8 @@ let perfisUsuario=[];
 const PERFIS_OK=['admin','gestor'];
 
 let OBRAS=[];
-let G = { aba:'dash', obra:null, fData:'', fPav:null, dados:null, calRef:null };
+let G = { aba:'dash', obra:null, fData:'', fPav:null, dados:null, calRef:null, showCal:false,
+  rel:{ de:'', ate:'', traco:'', pav:'', idade:'' } };
 
 function fmtData(iso){ if(!iso) return '—'; const s=String(iso).slice(0,10); const[a,m,d]=s.split('-'); return d&&m&&a?`${d}/${m}/${a}`:s; }
 function fmt(n,c){ if(n==null||isNaN(n)) return '—'; return Number(n).toFixed(c==null?1:c); }
@@ -175,8 +176,7 @@ function casca(){
     </div>
     <div class="tabs">
       <button class="tab ${G.aba==='dash'?'on':''}" onclick="irAba('dash')">Dashboard</button>
-      <button class="tab ${G.aba==='relr'?'on':''}" onclick="irAba('relr')">Relatório de resultados</button>
-      <button class="tab ${G.aba==='relq'?'on':''}" onclick="irAba('relq')">Relatório de quantidades</button>
+      <button class="tab ${G.aba==='rel'?'on':''}" onclick="irAba('rel')">Relatórios</button>
     </div>
     <div class="wrap" id="wrap"></div>`;
 }
@@ -184,7 +184,7 @@ function irAba(a){ G.aba=a; render(); }
 function render(){
   root.innerHTML = casca();
   if(G.aba==='dash') desenharDash();
-  else desenharRelatorio(G.aba==='relq'?'quant':'result');
+  else desenharRelatorios();
 }
 
 async function iniciar(){
@@ -237,6 +237,10 @@ async function carregarDados(){
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
   G.dados={ pavs, R, P, X, datas };
   G.calRef = datas.length ? new Date(datas[0]+'T00:00:00') : new Date();
+  // período padrão do relatório = abrange todas as datas de concretagem desta obra
+  if(datas.length){ G.rel.de = datas[datas.length-1]; G.rel.ate = datas[0]; }
+  else { G.rel.de=''; G.rel.ate=''; }
+  G.rel.traco=''; G.rel.pav=''; G.rel.idade='';
 }
 async function trocarObra(id){
   G.obra=id; G.fData=''; G.fPav=null;
@@ -322,10 +326,11 @@ function desenharDash(){
     <div class="officehead"><h2>Dashboard de resultados</h2><p>Elevação da torre — cada bloco é um andar, colorido pela conformidade. Clique para ver o detalhe.</p></div>
     <div class="filters">
       <div class="office-fld"><label>Obra</label><select style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <button class="btn ghost sm" onclick="G.showCal=!G.showCal;render()">${G.showCal?'ocultar calendário':'data da concretagem'}</button>
       ${G.fData?`<button class="btn ghost sm" onclick="G.fData='';render()">✕ ${fmtData(G.fData)}</button>`:''}
       ${G.fPav?`<button class="btn ghost sm" onclick="G.fPav=null;render()">✕ ${G.fPav}</button>`:''}
-      <button class="btn sm" onclick="exportarDashPDF()">Exportar PDF</button>
     </div>
+    ${G.showCal?calendarioHTML():''}
     <div class="bar">
       <div class="kpi"><div class="v">${pct}%</div><div class="k">Conformidade (final)</div></div>
       <div class="kpi ${nc?'alert':''}"><div class="v">${nc}</div><div class="k">Não conformes</div></div>
@@ -343,7 +348,6 @@ function desenharDash(){
         </div>
       </div>
       <div>
-        ${calendarioHTML()}
         <div class="card"><div class="ch">Rompimentos finalizados <span class="chip info">28 / 63 d</span>${G.fPav?` · ${G.fPav}`:''}</div>
           <table><thead><tr><th>Pavimento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Idade</th><th>Resultado</th><th>Conf.</th></tr></thead>
           <tbody>${detF.length?detF.map(rowF).join('')+volF(detF,7):'<tr><td colspan="7" class="empty">Sem finais para o filtro.</td></tr>'}</tbody></table></div>
@@ -388,47 +392,66 @@ function calendarioHTML(){
 function mudarMes(delta){ const r=G.calRef||new Date(); G.calRef=new Date(r.getFullYear(), r.getMonth()+delta, 1); render(); }
 function selData(iso){ G.fData = (G.fData===iso)?'':iso; render(); }
 
-// ---- RELATÓRIOS ----
-function desenharRelatorio(tipo){
-  const wrap=document.getElementById('wrap');
-  const {R,X}=dadosFiltrados();
+// ---- RELATÓRIOS (uma aba, dois cards de filtros, sem tabela) ----
+function desenharRelatorios(){
+  const wrap=document.getElementById('wrap'); const D=G.dados;
   const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${o.id===G.obra?'selected':''}>${o.nome}</option>`).join('');
-  const titulo = tipo==='quant'?'Relatório de quantidades':'Relatório de resultados';
-  const desc = tipo==='quant'?'Recebimento: volume e aceite/recusa por nota fiscal.':'Acompanhamento: slump, água, rompimentos e conformidade.';
+  // opções de traço, pavimento e idade a partir dos dados da obra
+  const tracos=[...new Set(D.R.concat(D.X).map(r=>labelTraco(r)))].sort();
+  const pavs=[...new Set(D.pavs.map(p=>p.nome))];
+  const idades=[...new Set(D.R.filter(r=>ehFinal(r.idade)).map(r=>r.idade))].sort((a,b)=>a-b);
+  const opt=(arr,sel,fmtfn)=>['<option value="">Todos</option>'].concat(arr.map(v=>`<option value="${v}" ${String(v)===String(sel)?'selected':''}>${fmtfn?fmtfn(v):v}</option>`)).join('');
 
-  let head, linhas, n;
-  if(tipo==='quant'){
-    const aceitas=somarBetoneirasAceitas();
-    const todas=aceitas.concat(X.map(x=>({pav:x.pav,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada'})));
-    todas.sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
-    head=['Pavimento','Data','NF','Traço','Volume (m³)','Aceite'];
-    linhas=todas.map(r=>`<tr><td>${r.pav}</td><td class="mono">${fmtData(r.data)}</td><td class="mono">${r.nf}</td><td>${r.traco}</td><td class="mono">${fmt(r.vol)}</td><td>${r.aceite==='Recusada'?'<span class="chip bad">recusada</span>':'<span class="chip ok">aceita</span>'}</td></tr>`).join('');
-    n=todas.length; G._relexport={tipo,head,rows:todas};
-  } else {
-    const finais=duplasFinais(R);
-    finais.sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
-    head=['Pavimento','Data','NF','Traço','Slump medido','Água (L)','Resultado (MPa)','Conformidade'];
-    linhas=finais.map(d=>`<tr><td>${d.pav}</td><td class="mono">${fmtData(d.data)}</td><td class="mono">${d.nf}</td><td>${labelTraco(d)}</td><td class="mono">${fmt(d.slumpMed)}</td><td class="mono">${fmt(d.agua)}</td><td class="mono">${fmt(d.resultado)}</td><td>${d.conforme?'<span class="chip ok">conforme</span>':'<span class="chip bad">não conf.</span>'}</td></tr>`).join('');
-    n=finais.length; G._relexport={tipo,head,rows:finais};
-  }
+  const filtros = `
+    <div class="filters" style="margin-bottom:14px">
+      <div class="office-fld"><label>Obra</label><select style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Período — de (concretagem)</label><input type="date" value="${G.rel.de}" onchange="G.rel.de=this.value;render()"></div>
+      <div class="office-fld"><label>Até (concretagem)</label><input type="date" value="${G.rel.ate}" onchange="G.rel.ate=this.value;render()"></div>
+      <div class="office-fld"><label>Traço</label><select style="width:200px" onchange="G.rel.traco=this.value;render()">${opt(tracos,G.rel.traco)}</select></div>
+      <div class="office-fld"><label>Pavimento</label><select style="width:180px" onchange="G.rel.pav=this.value;render()">${opt(pavs,G.rel.pav)}</select></div>
+      <div class="office-fld"><label>Idade</label><select style="width:120px" onchange="G.rel.idade=this.value;render()">${opt(idades,G.rel.idade,v=>v+' dias')}</select></div>
+    </div>`;
+
+  const nRes=relResultados().length, nQua=relQuantidades().length;
 
   wrap.innerHTML=`
-    <div class="officehead"><h2>${titulo}</h2><p>${desc}</p></div>
-    <div class="filters">
-      <div class="office-fld"><label>Obra</label><select style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
-      ${G.fData?`<button class="btn ghost sm" onclick="G.fData='';render()">✕ ${fmtData(G.fData)}</button>`:''}
-      <button class="btn sm" onclick="exportarRelatorioPDF()">Exportar PDF</button>
-      <button class="btn ghost sm" onclick="exportarRelatorioExcel()">Exportar Excel</button>
+    <div class="officehead"><h2>Relatórios</h2><p>Escolha os filtros e exporte. O período se refere à <b>data da concretagem</b>.</p></div>
+    ${filtros}
+    <div class="card">
+      <div class="ch">Relatório de resultados <span class="chip">${nRes} linha(s)</span></div>
+      <div class="muted" style="font-size:13px;margin-bottom:12px">Acompanhamento: slump, água, rompimentos e conformidade.</div>
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px">Colunas</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'].map(c=>`<span class="chip mut">${c}</span>`).join('')}</div>
+      <div style="display:flex;gap:10px"><button class="btn sm" onclick="exportarRelPDF('result')">Gerar PDF</button><button class="btn ghost sm" onclick="exportarRelExcel('result')">Gerar Excel</button></div>
     </div>
-    ${calendarioHTML()}
-    <div class="card"><div class="ch">${titulo} <span class="chip">${n} linha(s)</span></div>
-      <table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-      <tbody>${linhas||`<tr><td colspan="${head.length}" class="empty">Sem dados para o filtro.</td></tr>`}</tbody></table></div>`;
+    <div class="card">
+      <div class="ch">Relatório de quantidades <span class="chip">${nQua} linha(s)</span></div>
+      <div class="muted" style="font-size:13px;margin-bottom:12px">Recebimento: volume e aceite/recusa por nota fiscal.</div>
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px">Colunas</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${['Pavimento','Data','NF','Traço','Volume (m³)','Aceite/Recusa'].map(c=>`<span class="chip mut">${c}</span>`).join('')}</div>
+      <div style="display:flex;gap:10px"><button class="btn sm" onclick="exportarRelPDF('quant')">Gerar PDF</button><button class="btn ghost sm" onclick="exportarRelExcel('quant')">Gerar Excel</button></div>
+    </div>`;
 }
-function somarBetoneirasAceitas(){
-  const {R}=dadosFiltrados(); const map={};
-  R.forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
-  return Object.values(map);
+// aplica filtros do relatório (período por data de concretagem, traço, pav, idade)
+function passaFiltroRel(r, comIdade){
+  if(G.rel.de && r.data < G.rel.de) return false;
+  if(G.rel.ate && r.data > G.rel.ate) return false;
+  if(G.rel.traco && labelTraco(r)!==G.rel.traco) return false;
+  if(G.rel.pav && r.pav!==G.rel.pav) return false;
+  if(comIdade && G.rel.idade && String(r.idade)!==String(G.rel.idade)) return false;
+  return true;
+}
+function relResultados(){
+  return duplasFinais(G.dados.R).filter(d=>passaFiltroRel(d,true))
+    .sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
+}
+function relQuantidades(){
+  // betoneiras aceitas (por NF, via rompimentos) + recusadas
+  const map={};
+  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
+  const aceitas=Object.values(map);
+  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada'}));
+  return aceitas.concat(recus).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
 }
 
 // ---- PDFs ----
@@ -465,29 +488,34 @@ function exportarDashPDF(){
       headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8}, margin:{left:12,right:12} }); }
   doc.save('conformidade_'+new Date().toISOString().slice(0,10)+'.pdf');
 }
-function exportarRelatorioPDF(){
+function exportarRelPDF(tipo){
   if(!window.jspdf||!window.jspdf.jsPDF){ alert('PDF não carregou. Recarregue a página.'); return; }
-  const ex=G._relexport; if(!ex) return;
   const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const accent=[189,93,39]; const titulo=ex.tipo==='quant'?'Relatório de Quantidades':'Relatório de Resultados';
+  const accent=[189,93,39]; const titulo=tipo==='quant'?'Relatório de Quantidades':'Relatório de Resultados';
   pdfHeader(doc,titulo);
-  const body = ex.tipo==='quant'
-    ? ex.rows.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol),r.aceite])
-    : ex.rows.map(d=>[d.pav,fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']);
-  doc.autoTable({ head:[ex.head], body, startY:27, theme:'grid',
+  let head, body;
+  if(tipo==='quant'){
+    const rows=relQuantidades();
+    head=['Pavimento','Data','NF','Traço','Volume (m³)','Aceite'];
+    body=rows.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol),r.aceite]);
+  } else {
+    const rows=relResultados();
+    head=['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'];
+    body=rows.map(d=>[d.pav,fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']);
+  }
+  doc.autoTable({ head:[head], body, startY:27, theme:'grid',
     styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
     headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8}, margin:{left:12,right:12} });
-  doc.save((ex.tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.pdf');
+  doc.save((tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.pdf');
 }
-function exportarRelatorioExcel(){
+function exportarRelExcel(tipo){
   if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
-  const ex=G._relexport; if(!ex) return;
-  const rows = ex.tipo==='quant'
-    ? ex.rows.map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Aceite:r.aceite}))
-    : ex.rows.map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump medido':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'}));
+  let rows;
+  if(tipo==='quant'){ rows=relQuantidades().map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Aceite:r.aceite})); }
+  else { rows=relResultados().map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'})); }
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), ex.tipo==='quant'?'Quantidades':'Resultados');
-  XLSX.writeFile(wb,(ex.tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.xlsx');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), tipo==='quant'?'Quantidades':'Resultados');
+  XLSX.writeFile(wb,(tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 (async function(){
