@@ -469,11 +469,11 @@ function relQuantidades(){
 // ---- PDFs ----
 function pdfHeader(doc,titulo){
   const pageW=doc.internal.pageSize.getWidth(); const accent=[189,93,39], muted=[122,116,106];
-  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||'';
+  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(14,14,14);
   doc.text('GT&ABC · Controle Tecnológico de Concreto', 12, 14);
   doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
-  doc.text(titulo+' — '+obraNome, 12, 20);
+  doc.text(obraNome ? (titulo+' — '+obraNome) : titulo, 12, 20);
   doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]);
   doc.text('Gerado em '+fmtData(new Date().toISOString())+(G.fData?'  ·  concretagem '+fmtData(G.fData):''), pageW-12, 14, {align:'right'});
 }
@@ -549,26 +549,35 @@ function somaPorTraco(arr){
 }
 function exportarRelExcel(tipo){
   if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
+  const obraNome=(OBRAS.find(o=>o.id===G.obra)||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
   const wb=XLSX.utils.book_new();
+  // escreve um título "Relatório — Obra" no topo da aba e os dados abaixo
+  const comTitulo=(ws, titulo, ncols)=>{
+    XLSX.utils.sheet_add_aoa(ws, [[titulo+' — '+obraNome]], {origin:'A1'});
+    return ws;
+  };
   if(tipo==='quant'){
     const todas=relQuantidades();
     const aceitas=todas.filter(r=>r.aceite==='Aceita');
     const recusadas=todas.filter(r=>r.aceite==='Recusada');
-    const monta=(arr)=>{
+    const monta=(arr,titulo)=>{
       const linhas=arr.map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol}));
-      // linha em branco + somatório por traço + total geral
       linhas.push({});
       somaPorTraco(arr).forEach(t=>linhas.push({Pavimento:'TOTAL',Traço:t.traco,'Volume (m³)':Number(t.vol.toFixed(1))}));
       linhas.push({Pavimento:'TOTAL GERAL','Volume (m³)':Number(arr.reduce((s,r)=>s+r.vol,0).toFixed(1))});
-      return XLSX.utils.json_to_sheet(linhas);
+      const ws=XLSX.utils.json_to_sheet(linhas, {origin:'A3'});
+      XLSX.utils.sheet_add_aoa(ws, [[titulo+' — '+obraNome]], {origin:'A1'});
+      return ws;
     };
-    XLSX.utils.book_append_sheet(wb, monta(aceitas), 'Aceitas');
-    XLSX.utils.book_append_sheet(wb, monta(recusadas), 'Recusadas');
+    XLSX.utils.book_append_sheet(wb, monta(aceitas,'Quantidades · Aceitas'), 'Aceitas');
+    XLSX.utils.book_append_sheet(wb, monta(recusadas,'Quantidades · Recusadas'), 'Recusadas');
     XLSX.writeFile(wb,'quantidades_'+new Date().toISOString().slice(0,10)+'.xlsx');
     return;
   }
   const rows=relResultados().map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Resultados');
+  const ws=XLSX.utils.json_to_sheet(rows, {origin:'A3'});
+  XLSX.utils.sheet_add_aoa(ws, [['Relatório de Resultados — '+obraNome]], {origin:'A1'});
+  XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
   XLSX.writeFile(wb,'resultados_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
