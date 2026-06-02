@@ -213,6 +213,7 @@ async function iniciar(){
 async function carregarDados(){
   G.dados=null;
   const obraId=G.obra;
+  G.obraNome=(OBRAS.find(o=>String(o.id)===String(obraId))||{}).nome||'';
   const { data:pavs, error:e0 } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
   if(e0) throw e0;
 
@@ -298,7 +299,7 @@ function dadosFiltrados(){
 // ---- DASHBOARD ----
 function desenharDash(){
   const wrap=document.getElementById('wrap'); const D=G.dados;
-  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   const {R,P,X}=dadosFiltrados();
   const finais=duplasFinais(R);
 
@@ -469,7 +470,7 @@ function relQuantidades(){
 // ---- PDFs ----
 function pdfHeader(doc,titulo){
   const pageW=doc.internal.pageSize.getWidth(); const accent=[189,93,39], muted=[122,116,106];
-  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(14,14,14);
   doc.text('GT&ABC · Controle Tecnológico de Concreto', 12, 14);
   doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(accent[0],accent[1],accent[2]);
@@ -549,7 +550,7 @@ function somaPorTraco(arr){
 }
 function exportarRelExcel(tipo){
   if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
-  const obraNome=(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||(OBRAS[0]&&OBRAS[0].nome)||'';
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   const wb=XLSX.utils.book_new();
   // escreve um título "Relatório — Obra" no topo da aba e os dados abaixo
   const comTitulo=(ws, titulo, ncols)=>{
