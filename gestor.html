@@ -200,11 +200,21 @@ async function iniciar(){
     else { const { data, error } = await sb.rpc('meus_perfis'); if(error) err=error.message; else perfisUsuario=Array.isArray(data)?data:[]; }
   }catch(e){ err=(e&&e.message)?e.message:String(e); }
   if(!perfisUsuario.some(p=>PERFIS_OK.includes(p))){ telaSemAcesso(err); return; }
+  // obras às quais este gestor está restrito (vazio = todas). Admin sempre vê todas.
+  G.obrasRestritas=[];
+  try{
+    if(!perfisUsuario.includes('admin')){
+      const { data } = await sb.rpc('minhas_obras');
+      G.obrasRestritas = Array.isArray(data) ? data.map(Number) : [];
+    }
+  }catch(_){ G.obrasRestritas=[]; }
   try{
     const { data, error } = await sb.from('obras').select('id,nome').order('nome');
     if(error) throw error;
-    OBRAS=data||[];
-    if(!OBRAS.length){ root.innerHTML=casca(); document.getElementById('wrap').innerHTML='<div class="estado">Nenhuma obra cadastrada.</div>'; return; }
+    let lista = data||[];
+    if(G.obrasRestritas.length){ lista = lista.filter(o=>G.obrasRestritas.includes(Number(o.id))); }
+    OBRAS=lista;
+    if(!OBRAS.length){ root.innerHTML=casca(); document.getElementById('wrap').innerHTML='<div class="estado">Nenhuma obra liberada para o seu acesso.</div>'; return; }
     G.obra=OBRAS[0].id;
     await carregarDados();
     render();
@@ -339,7 +349,7 @@ function desenharDash(){
   wrap.innerHTML=`
     <div class="officehead"><h2>Dashboard de resultados</h2><p>Elevação da torre — cada bloco é um andar, colorido pela conformidade. Clique para ver o detalhe.</p></div>
     <div class="filters">
-      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Obra</label>${OBRAS.length>1?`<select id="selObra" style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select>`:`<div style="font-weight:700;padding:10px 2px">${obraNome}</div>`}</div>
       <button class="btn ghost sm" onclick="G.showCal=!G.showCal;render()">${G.showCal?'ocultar calendário':'data da concretagem'}</button>
       ${G.fData?`<button class="btn ghost sm" onclick="G.fData='';render()">✕ ${fmtData(G.fData)}</button>`:''}
       ${G.fPav?`<button class="btn ghost sm" onclick="G.fPav=null;render()">✕ ${G.fPav}</button>`:''}
@@ -409,6 +419,7 @@ function selData(iso){ G.fData = (G.fData===iso)?'':iso; render(); }
 // ---- RELATÓRIOS (uma aba, dois cards de filtros, sem tabela) ----
 function desenharRelatorios(){
   const wrap=document.getElementById('wrap'); const D=G.dados;
+  const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
   // opções de traço, pavimento e idade a partir dos dados da obra
   const tracos=[...new Set(D.R.concat(D.X).map(r=>labelTraco(r)))].sort();
@@ -418,7 +429,7 @@ function desenharRelatorios(){
 
   const filtros = `
     <div class="filters" style="margin-bottom:14px">
-      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Obra</label>${OBRAS.length>1?`<select id="selObra" style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select>`:`<div style="font-weight:700;padding:10px 2px">${obraNome}</div>`}</div>
       <div class="office-fld"><label>Período — de (concretagem)</label><input type="date" value="${G.rel.de}" onchange="G.rel.de=this.value;render()"></div>
       <div class="office-fld"><label>Até (concretagem)</label><input type="date" value="${G.rel.ate}" onchange="G.rel.ate=this.value;render()"></div>
       <div class="office-fld"><label>Traço</label><select style="width:200px" onchange="G.rel.traco=this.value;render()">${opt(tracos,G.rel.traco)}</select></div>
