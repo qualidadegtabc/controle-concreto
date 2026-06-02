@@ -185,6 +185,9 @@ function render(){
   root.innerHTML = casca();
   if(G.aba==='dash') desenharDash();
   else desenharRelatorios();
+  // garante que o seletor de obra mostre a obra atual (evita ele "voltar" visualmente)
+  const sel=document.getElementById('selObra');
+  if(sel) sel.value = G.obra;
 }
 
 async function iniciar(){
@@ -334,7 +337,7 @@ function desenharDash(){
   wrap.innerHTML=`
     <div class="officehead"><h2>Dashboard de resultados</h2><p>Elevação da torre — cada bloco é um andar, colorido pela conformidade. Clique para ver o detalhe.</p></div>
     <div class="filters">
-      <div class="office-fld"><label>Obra</label><select style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:230px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
       <button class="btn ghost sm" onclick="G.showCal=!G.showCal;render()">${G.showCal?'ocultar calendário':'data da concretagem'}</button>
       ${G.fData?`<button class="btn ghost sm" onclick="G.fData='';render()">✕ ${fmtData(G.fData)}</button>`:''}
       ${G.fPav?`<button class="btn ghost sm" onclick="G.fPav=null;render()">✕ ${G.fPav}</button>`:''}
@@ -413,7 +416,7 @@ function desenharRelatorios(){
 
   const filtros = `
     <div class="filters" style="margin-bottom:14px">
-      <div class="office-fld"><label>Obra</label><select style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
+      <div class="office-fld"><label>Obra</label><select id="selObra" style="width:210px" onchange="trocarObra(this.value)">${obrasOpts}</select></div>
       <div class="office-fld"><label>Período — de (concretagem)</label><input type="date" value="${G.rel.de}" onchange="G.rel.de=this.value;render()"></div>
       <div class="office-fld"><label>Até (concretagem)</label><input type="date" value="${G.rel.ate}" onchange="G.rel.ate=this.value;render()"></div>
       <div class="office-fld"><label>Traço</label><select style="width:200px" onchange="G.rel.traco=this.value;render()">${opt(tracos,G.rel.traco)}</select></div>
