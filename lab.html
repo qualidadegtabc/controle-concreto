@@ -601,7 +601,7 @@ function desenharRomper(){
   } else {
     html += `<div class="card" style="padding:0;overflow:hidden">
       <table><thead><tr>
-        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:150px">Traço</th><th style="width:110px">Idade</th><th style="width:120px">Prevista</th>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:90px">fck</th><th style="width:110px">Idade</th><th style="width:120px">Prevista</th>
         <th style="width:210px">Corpo de prova · Prensa</th><th style="width:150px">Resultado</th><th>Observação</th>
       </tr></thead><tbody>`;
     lista.forEach(d=>{
@@ -618,7 +618,7 @@ function desenharRomper(){
       html += `<tr>
         <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
         <td class="mono">${d.nf}</td>
-        <td style="font-size:12px">${labelTraco(d)}</td>
+        <td class="mono">fck ${d.fck||'—'}</td>
         <td><select style="width:104px;padding:8px" onchange="reprogramarIdade('${d.duplaKey}',this.value,this)">${idadeOpts}</select></td>
         <td class="mono">${prevTxt}</td>
         <td>${inputs}</td>
@@ -639,7 +639,7 @@ function desenharRomper(){
   } else {
     html += `<div class="card" style="padding:0;overflow:hidden">
       <table><thead><tr>
-        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:150px">Traço</th><th style="width:55px">Idade</th>
+        <th>Obra · Pav</th><th style="width:80px">NF</th><th style="width:90px">fck</th><th style="width:55px">Idade</th>
         <th style="width:230px">Prensas (tf)</th><th style="width:160px">Resultado</th><th>Observação</th><th style="width:170px"></th>
       </tr></thead><tbody>`;
     rompidosDia.forEach(d=>{
@@ -651,7 +651,7 @@ function desenharRomper(){
             <input style="width:68px;padding:8px" inputmode="decimal" value="${e.p[it.rompId]||''}" oninput="editRomp['${d.duplaId}'].p[${it.rompId}]=this.value"></span>`).join('');
         html += `<tr style="background:#fffdf4">
           <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
-          <td class="mono">${d.nf}</td><td style="font-size:12px">${labelTraco(d)}</td><td class="mono">${d.idade}d</td>
+          <td class="mono">${d.nf}</td><td class="mono">fck ${d.fck||'—'}</td><td class="mono">${d.idade}d</td>
           <td>${inputs}</td>
           <td class="muted" style="font-size:12px">recalcula ao salvar</td>
           <td><input style="width:100%;padding:8px" value="${e.obs||''}" oninput="editRomp['${d.duplaId}'].obs=this.value"></td>
@@ -662,7 +662,7 @@ function desenharRomper(){
         const prensasTxt = d.itens.map(it=>`<span class="mono" style="margin-right:10px">CP${it.numero}: ${it.tf!=null?Number(it.tf).toFixed(1):'—'}</span>`).join('');
         html += `<tr>
           <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
-          <td class="mono">${d.nf}</td><td style="font-size:12px">${labelTraco(d)}</td><td class="mono">${d.idade}d</td>
+          <td class="mono">${d.nf}</td><td class="mono">fck ${d.fck||'—'}</td><td class="mono">${d.idade}d</td>
           <td>${prensasTxt}</td>
           <td>${vereditoHTML(d.resultado, d.idade, d.fck)}</td>
           <td style="font-size:13px">${d.itens[0].obs||'<span class="muted">—</span>'}</td>
