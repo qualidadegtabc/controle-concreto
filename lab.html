@@ -169,6 +169,33 @@ function casca(){
 }
 function irAba(a){ abaAtual=a; render(); }
 
+// ---- EDITAR PAVIMENTO DE UMA CONCRETAGEM (admin) ----
+async function editarPavimento(concId, obraId, pavAtual){
+  if(!perfisUsuario.includes('admin')) return;
+  if(estaOffline()){ alert('Sem internet — não é possível editar agora. Tente quando o sinal voltar.'); return; }
+  try{
+    const { data:pavs, error } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
+    if(error) throw error;
+    if(!pavs||!pavs.length){ alert('Nenhum pavimento cadastrado para esta obra.'); return; }
+    const lista = pavs.map((p,i)=>`${i+1}) ${p.nome}`).join('\n');
+    const resp = prompt(
+      `Corrigir pavimento desta concretagem.\nAtual: ${pavAtual}\n\n`+
+      `ATENÇÃO: muda o pavimento de TODAS as betoneiras/NFs desta mesma concretagem.\n\n`+
+      `Digite o número do novo pavimento:\n\n${lista}`);
+    if(resp===null) return;
+    const idx = parseInt(String(resp).trim(),10)-1;
+    if(isNaN(idx) || idx<0 || idx>=pavs.length){ alert('Número inválido. Nada foi alterado.'); return; }
+    const novo = pavs[idx];
+    if(!confirm(`Confirmar: mover esta concretagem para "${novo.nome}"?`)) return;
+    const { error:e2 } = await sb.from('concretagens').update({ pavimento_id: novo.id }).eq('id', concId);
+    if(e2) throw e2;
+    resLinhas = await buscarResultados();
+    desenharResultados();
+  }catch(e){
+    alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar o pavimento: '+(e.message||e)));
+  }
+}
+
 // ---- AUDITORIA (admin) ----
 let AUD = { linhas:[], fUser:'', fAcao:'', fTabela:'', fDe:'', fAte:'' };
 const ACAO_PT = { INSERT:'Criou', UPDATE:'Editou', DELETE:'Apagou' };
@@ -856,7 +883,7 @@ async function buscarResultados(){
   const { data, error } = await sb.from('corpos_prova')
     .select('id,numero,idade_prevista,data_prevista,descartado,betoneira_id,'+
       'betoneiras!inner(id,nota_fiscal,lacre,fck,slump_medido,agua_adicionada,volume,aceita,'+
-        'concretagens!inner(data_concretagem,obras!inner(nome),pavimentos!inner(nome),elementos(nome),concreteiras(nome))),'+
+        'concretagens!inner(id,obra_id,data_concretagem,obras!inner(nome),pavimentos!inner(id,nome),elementos(nome),concreteiras(nome))),'+
       'rompimentos(prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao)')
     .eq('descartado', false)
     .order('numero',{ascending:true});
@@ -895,6 +922,7 @@ async function buscarResultados(){
       linhas.push({
         cpLabel: par.map(p=>String(p.numero).padStart(3,'0')).join('·'),
         obra:c.obras.nome, pav:c.pavimentos.nome,
+        concId:c.id, obraId:c.obra_id, pavId:c.pavimentos.id,
         elemento:(c.elementos&&c.elementos.nome)||'—', concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
         nf:bt.nota_fiscal, lacre:bt.lacre||'—', fck:bt.fck,
         slump:bt.slump_medido, agua:bt.agua_adicionada, volume:bt.volume,
@@ -999,7 +1027,9 @@ function desenharResultados(){
     const naoConf = l.conf==='nao';
     html += `<tr ${naoConf?'style="background:#fdf1ee"':''}>
       <td><span class="cpchip" style="font-size:14px;padding:6px 9px;min-width:auto">${l.cpLabel}</span></td>
-      <td>${l.obra}</td><td style="font-size:12px">${l.pav}</td>
+      <td>${l.obra}</td><td style="font-size:12px">${perfisUsuario.includes('admin')
+        ? `<button onclick="editarPavimento(${l.concId}, ${l.obraId}, '${String(l.pav).replace(/'/g,"\\'")}')" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o pavimento (admin)">${l.pav} ✎</button>`
+        : l.pav}</td>
       <td style="font-size:12px">${l.elemento}</td><td style="font-size:12px">${l.concreteira}</td>
       <td class="mono">${l.nf}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
       <td class="mono">${n1(l.slump)}</td><td class="mono">${n1(l.agua)}</td><td class="mono">${n1(l.volume)}</td>
