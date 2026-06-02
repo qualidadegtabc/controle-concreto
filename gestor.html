@@ -209,35 +209,39 @@ async function iniciar(){
 
 async function carregarDados(){
   G.dados=null;
-  const { data:pavs, error:e0 } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',G.obra).order('ordem');
+  const obraId=G.obra;
+  const { data:pavs, error:e0 } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
   if(e0) throw e0;
-  const romps = await pegarTudo('rompimentos',
-    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))))');
-  const cpsPend = await pegarTudo('corpos_prova',
-    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))),rompimentos(id)');
-  const recus = await pegarTudo('betoneiras',
-    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome)),motivos_recusa(nome)');
 
-  const naObra = x => x && x.obra_id===G.obra;
-  const R = (romps||[]).filter(r=>r.confirmado && naObra(r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens))
+  // Filtra a OBRA já na consulta (via relação), trazendo só o que é desta obra.
+  const romps = await pegarTudo('rompimentos',
+    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))))',
+    q=>q.eq('corpos_prova.betoneiras.concretagens.obra_id', obraId));
+  const cpsPend = await pegarTudo('corpos_prova',
+    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))),rompimentos(id)',
+    q=>q.eq('betoneiras.concretagens.obra_id', obraId));
+  const recus = await pegarTudo('betoneiras',
+    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome)),motivos_recusa(nome)',
+    q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
+
+  const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
     .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
       const mpa=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null);
       return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
                slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa }; });
   const nfComFinal=new Set(R.filter(r=>ehFinal(r.idade)).map(r=>r.nf));
   const semRomp = cp => !cp.rompimentos || (Array.isArray(cp.rompimentos)?cp.rompimentos.length===0:!cp.rompimentos);
-  const P = (cpsPend||[]).filter(cp=>!cp.descartado && semRomp(cp) && naObra(cp.betoneiras&&cp.betoneiras.concretagens) && cp.idade_prevista!=null && cp.idade_prevista<28)
+  const P = (cpsPend||[]).filter(cp=>!cp.descartado && semRomp(cp) && cp.betoneiras&&cp.betoneiras.concretagens && cp.idade_prevista!=null && cp.idade_prevista<28)
     .map(cp=>{ const b=cp.betoneiras,c=b.concretagens,p=c.pavimentos;
       return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista }; })
     .filter(x=>!nfComFinal.has(x.nf));
-  const X = (recus||[]).filter(b=>!b.aceita && naObra(b.concretagens))
+  const X = (recus||[]).filter(b=>!b.aceita && b.concretagens)
     .map(b=>{ const c=b.concretagens,p=c.pavimentos;
       return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—' }; });
 
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
   G.dados={ pavs, R, P, X, datas };
   G.calRef = datas.length ? new Date(datas[0]+'T00:00:00') : new Date();
-  // período padrão do relatório = abrange todas as datas de concretagem desta obra
   if(datas.length){ G.rel.de = datas[datas.length-1]; G.rel.ate = datas[0]; }
   else { G.rel.de=''; G.rel.ate=''; }
   G.rel.traco=''; G.rel.pav=''; G.rel.idade='';
@@ -248,10 +252,15 @@ async function trocarObra(id){
   try{ await carregarDados(); render(); }
   catch(e){ const w=document.getElementById('wrap'); if(w) w.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
-async function pegarTudo(tabela, cols){
+async function pegarTudo(tabela, cols, mod){
   let todos=[], de=0; const passo=1000;
-  while(true){ const { data, error } = await sb.from(tabela).select(cols).range(de, de+passo-1);
-    if(error) throw error; todos=todos.concat(data||[]); if(!data||data.length<passo) break; de+=passo; }
+  while(true){
+    let q = sb.from(tabela).select(cols);
+    if(mod) q = mod(q);
+    q = q.range(de, de+passo-1);
+    const { data, error } = await q;
+    if(error) throw error; todos=todos.concat(data||[]); if(!data||data.length<passo) break; de+=passo;
+  }
   return todos;
 }
 
@@ -491,31 +500,73 @@ function exportarDashPDF(){
 function exportarRelPDF(tipo){
   if(!window.jspdf||!window.jspdf.jsPDF){ alert('PDF não carregou. Recarregue a página.'); return; }
   const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const accent=[189,93,39]; const titulo=tipo==='quant'?'Relatório de Quantidades':'Relatório de Resultados';
-  pdfHeader(doc,titulo);
-  let head, body;
+  const accent=[189,93,39];
   if(tipo==='quant'){
-    const rows=relQuantidades();
-    head=['Pavimento','Data','NF','Traço','Volume (m³)','Aceite'];
-    body=rows.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol),r.aceite]);
-  } else {
-    const rows=relResultados();
-    head=['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'];
-    body=rows.map(d=>[d.pav,fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']);
+    pdfHeader(doc,'Relatório de Quantidades');
+    const todas=relQuantidades();
+    const aceitas=todas.filter(r=>r.aceite==='Aceita');
+    const recusadas=todas.filter(r=>r.aceite==='Recusada');
+    const head=['Pavimento','Data','NF','Traço','Volume (m³)'];
+    const bloco=(titulo, arr, startY)=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
+      doc.text(titulo+'  ('+arr.length+')', 12, startY);
+      doc.autoTable({ head:[head], body:arr.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)]),
+        startY:startY+3, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+        headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+        columnStyles:{4:{halign:'right'}}, margin:{left:12,right:12} });
+      // somatório por traço
+      const porTraco=somaPorTraco(arr);
+      doc.autoTable({ body:porTraco.map(t=>[{content:'Total — '+t.traco,styles:{fontStyle:'bold'}},{content:fmt(t.vol)+' m³',styles:{halign:'right',fontStyle:'bold'}}])
+          .concat([[{content:'TOTAL GERAL',styles:{fontStyle:'bold'}},{content:fmt(arr.reduce((s,r)=>s+r.vol,0))+' m³',styles:{halign:'right',fontStyle:'bold'}}]]),
+        startY:doc.lastAutoTable.finalY+1, theme:'plain',
+        styles:{font:'helvetica',fontSize:8.5,cellPadding:1.3,textColor:[14,14,14]},
+        columnStyles:{0:{cellWidth:200}}, margin:{left:12,right:12} });
+      return doc.lastAutoTable.finalY;
+    };
+    let y=bloco('Betoneiras aceitas', aceitas, 27);
+    bloco('Betoneiras recusadas', recusadas, y+9);
+    doc.save('quantidades_'+new Date().toISOString().slice(0,10)+'.pdf');
+    return;
   }
-  doc.autoTable({ head:[head], body, startY:27, theme:'grid',
-    styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
-    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8}, margin:{left:12,right:12} });
-  doc.save((tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.pdf');
+  pdfHeader(doc,'Relatório de Resultados');
+  const rows=relResultados();
+  const head=['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'];
+  doc.autoTable({ head:[head], body:rows.map(d=>[d.pav,fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']),
+    startY:27, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
+    headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
+    didParseCell:dt=>{ if(dt.section==='body'&&dt.column.index===7&&dt.cell.raw==='Não conforme'){dt.cell.styles.textColor=[176,42,32];dt.cell.styles.fontStyle='bold';} },
+    margin:{left:12,right:12} });
+  doc.save('resultados_'+new Date().toISOString().slice(0,10)+'.pdf');
+}
+// soma de volume por traço completo
+function somaPorTraco(arr){
+  const map={};
+  arr.forEach(r=>{ if(!map[r.traco]) map[r.traco]={traco:r.traco,vol:0}; map[r.traco].vol+=(r.vol||0); });
+  return Object.values(map).sort((a,b)=>a.traco.localeCompare(b.traco));
 }
 function exportarRelExcel(tipo){
   if(!window.XLSX){ alert('Planilha não carregou. Recarregue a página.'); return; }
-  let rows;
-  if(tipo==='quant'){ rows=relQuantidades().map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Aceite:r.aceite})); }
-  else { rows=relResultados().map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'})); }
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), tipo==='quant'?'Quantidades':'Resultados');
-  XLSX.writeFile(wb,(tipo==='quant'?'quantidades_':'resultados_')+new Date().toISOString().slice(0,10)+'.xlsx');
+  if(tipo==='quant'){
+    const todas=relQuantidades();
+    const aceitas=todas.filter(r=>r.aceite==='Aceita');
+    const recusadas=todas.filter(r=>r.aceite==='Recusada');
+    const monta=(arr)=>{
+      const linhas=arr.map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol}));
+      // linha em branco + somatório por traço + total geral
+      linhas.push({});
+      somaPorTraco(arr).forEach(t=>linhas.push({Pavimento:'TOTAL',Traço:t.traco,'Volume (m³)':Number(t.vol.toFixed(1))}));
+      linhas.push({Pavimento:'TOTAL GERAL','Volume (m³)':Number(arr.reduce((s,r)=>s+r.vol,0).toFixed(1))});
+      return XLSX.utils.json_to_sheet(linhas);
+    };
+    XLSX.utils.book_append_sheet(wb, monta(aceitas), 'Aceitas');
+    XLSX.utils.book_append_sheet(wb, monta(recusadas), 'Recusadas');
+    XLSX.writeFile(wb,'quantidades_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    return;
+  }
+  const rows=relResultados().map(d=>({Pavimento:d.pav,Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Resultados');
+  XLSX.writeFile(wb,'resultados_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 (async function(){
