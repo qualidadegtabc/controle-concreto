@@ -170,30 +170,38 @@ function casca(){
 function irAba(a){ abaAtual=a; render(); }
 
 // ---- EDITAR PAVIMENTO DE UMA CONCRETAGEM (admin) ----
-async function editarPavimento(concId, obraId, pavAtual){
+// abre uma lista suspensa na própria linha
+let pavEditId = null;          // concId em edição
+let pavCacheObra = {};         // cache de pavimentos por obra
+async function editarPavimento(concId, obraId){
   if(!perfisUsuario.includes('admin')) return;
   if(estaOffline()){ alert('Sem internet — não é possível editar agora. Tente quando o sinal voltar.'); return; }
   try{
-    const { data:pavs, error } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
+    if(!pavCacheObra[obraId]){
+      const { data:pavs, error } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
+      if(error) throw error;
+      pavCacheObra[obraId] = pavs||[];
+    }
+    pavEditId = concId;
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — tente quando o sinal voltar.':'Não consegui abrir os pavimentos: '+(e.message||e))); }
+}
+function cancelarEditaPav(){ pavEditId=null; desenharResultados(); }
+async function salvarPavimento(concId, novoPavId, obraId){
+  novoPavId = parseInt(novoPavId,10);
+  if(!novoPavId){ return; }
+  const pavs = pavCacheObra[obraId]||[];
+  const novo = pavs.find(p=>p.id===novoPavId);
+  if(!novo){ alert('Pavimento inválido.'); return; }
+  if(!confirm(`Mover esta concretagem para "${novo.nome}"?\n\nMuda o pavimento de TODAS as betoneiras/NFs desta mesma concretagem.`)){ return; }
+  if(estaOffline()){ alert('Sem internet — a alteração NÃO foi salva.'); return; }
+  try{
+    const { error } = await sb.from('concretagens').update({ pavimento_id: novoPavId }).eq('id', concId);
     if(error) throw error;
-    if(!pavs||!pavs.length){ alert('Nenhum pavimento cadastrado para esta obra.'); return; }
-    const lista = pavs.map((p,i)=>`${i+1}) ${p.nome}`).join('\n');
-    const resp = prompt(
-      `Corrigir pavimento desta concretagem.\nAtual: ${pavAtual}\n\n`+
-      `ATENÇÃO: muda o pavimento de TODAS as betoneiras/NFs desta mesma concretagem.\n\n`+
-      `Digite o número do novo pavimento:\n\n${lista}`);
-    if(resp===null) return;
-    const idx = parseInt(String(resp).trim(),10)-1;
-    if(isNaN(idx) || idx<0 || idx>=pavs.length){ alert('Número inválido. Nada foi alterado.'); return; }
-    const novo = pavs[idx];
-    if(!confirm(`Confirmar: mover esta concretagem para "${novo.nome}"?`)) return;
-    const { error:e2 } = await sb.from('concretagens').update({ pavimento_id: novo.id }).eq('id', concId);
-    if(e2) throw e2;
+    pavEditId = null;
     resLinhas = await buscarResultados();
     desenharResultados();
-  }catch(e){
-    alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar o pavimento: '+(e.message||e)));
-  }
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar: '+(e.message||e))); }
 }
 
 // ---- AUDITORIA (admin) ----
@@ -1027,9 +1035,16 @@ function desenharResultados(){
     const naoConf = l.conf==='nao';
     html += `<tr ${naoConf?'style="background:#fdf1ee"':''}>
       <td><span class="cpchip" style="font-size:14px;padding:6px 9px;min-width:auto">${l.cpLabel}</span></td>
-      <td>${l.obra}</td><td style="font-size:12px">${perfisUsuario.includes('admin')
-        ? `<button onclick="editarPavimento(${l.concId}, ${l.obraId}, '${String(l.pav).replace(/'/g,"\\'")}')" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o pavimento (admin)">${l.pav} ✎</button>`
-        : l.pav}</td>
+      <td>${l.obra}</td><td style="font-size:12px">${(() => {
+        if(!perfisUsuario.includes('admin')) return l.pav;
+        if(pavEditId===l.concId){
+          const pavs=pavCacheObra[l.obraId]||[];
+          const opts=pavs.map(p=>`<option value="${p.id}" ${p.id===l.pavId?'selected':''}>${p.nome}</option>`).join('');
+          return `<select onchange="salvarPavimento(${l.concId}, this.value, ${l.obraId})" style="padding:6px 8px;font-size:12px;max-width:170px">${opts}</select>`+
+            `<button onclick="cancelarEditaPav()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:4px" title="cancelar">✕</button>`;
+        }
+        return `<button onclick="editarPavimento(${l.concId}, ${l.obraId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o pavimento (admin)">${l.pav} ✎</button>`;
+      })()}</td>
       <td style="font-size:12px">${l.elemento}</td><td style="font-size:12px">${l.concreteira}</td>
       <td class="mono">${l.nf}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
       <td class="mono">${n1(l.slump)}</td><td class="mono">${n1(l.agua)}</td><td class="mono">${n1(l.volume)}</td>
