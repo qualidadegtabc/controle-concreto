@@ -185,12 +185,13 @@ function casca(){
 }
 function irAba(a){ G.aba=a; render(); }
 function render(){
+  const prevElev=document.querySelector('.elevscroll'); const elevTop=prevElev?prevElev.scrollTop:null;
   root.innerHTML = casca();
   if(G.aba==='dash') desenharDash();
   else desenharRelatorios();
-  // garante que o seletor de obra mostre a obra atual (evita ele "voltar" visualmente)
   const sel=document.getElementById('selObra');
   if(sel) sel.value = String(G.obra);
+  if(elevTop!=null){ const e=document.querySelector('.elevscroll'); if(e) e.scrollTop=elevTop; }
 }
 
 async function iniciar(){
@@ -222,29 +223,29 @@ async function carregarDados(){
 
   // Filtra a OBRA já na consulta (via relação), trazendo só o que é desta obra.
   const romps = await pegarTudo('rompimentos',
-    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))))',
+    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))))',
     q=>q.eq('corpos_prova.betoneiras.concretagens.obra_id', obraId));
   const cpsPend = await pegarTudo('corpos_prova',
-    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))),rompimentos(id)',
+    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))),rompimentos(id)',
     q=>q.eq('betoneiras.concretagens.obra_id', obraId));
   const recus = await pegarTudo('betoneiras',
-    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome)),motivos_recusa(nome)',
+    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome)),motivos_recusa(nome)',
     q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
 
   const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
     .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
       const mpa=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null);
-      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
                slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa }; });
   const nfComFinal=new Set(R.filter(r=>ehFinal(r.idade)).map(r=>r.nf));
   const semRomp = cp => !cp.rompimentos || (Array.isArray(cp.rompimentos)?cp.rompimentos.length===0:!cp.rompimentos);
   const P = (cpsPend||[]).filter(cp=>!cp.descartado && semRomp(cp) && cp.betoneiras&&cp.betoneiras.concretagens && cp.idade_prevista!=null && cp.idade_prevista<28)
     .map(cp=>{ const b=cp.betoneiras,c=b.concretagens,p=c.pavimentos;
-      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista }; })
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista }; })
     .filter(x=>!nfComFinal.has(x.nf));
   const X = (recus||[]).filter(b=>!b.aceita && b.concretagens)
     .map(b=>{ const c=b.concretagens,p=c.pavimentos;
-      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—' }; });
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—' }; });
 
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
   G.dados={ pavs, R, P, X, datas };
@@ -274,7 +275,7 @@ async function pegarTudo(tabela, cols, mod){
 function duplasFinais(romps){
   const map={};
   romps.filter(r=>ehFinal(r.idade)).forEach(r=>{ const k=r.nf+'|'+r.idade;
-    if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,dataRomp:r.dataRomp,slumpMed:r.slumpMed,agua:r.agua,mpas:[] };
+    if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,dataRomp:r.dataRomp,slumpMed:r.slumpMed,agua:r.agua,mpas:[] };
     map[k].mpas.push(r.mpa); });
   return Object.values(map).map(d=>{ const melhor=Math.max(...d.mpas.filter(v=>v!=null),-Infinity);
     return { ...d, resultado:isFinite(melhor)?melhor:null, conforme:isFinite(melhor)?melhor>=(d.fck||0):null }; });
@@ -329,13 +330,13 @@ function desenharDash(){
 
   const totalVol = (G.fPav?detA:aceitas).reduce((s,r)=>s+r.vol,0);
   const totalNF  = (G.fPav?detA:aceitas).length;
-  const andaresComConc = andares.filter(a=>andarMap[a].vol>0).length;
+  const pavsComConc = new Set(aceitas.filter(r=>r.vol>0).map(r=>r.pavId)).size;
   const kpi3=G.fPav
     ? `<div class="kpi"><div class="v" style="font-size:14px;line-height:1.5">${[...new Set(detA.map(x=>fmtData(x.data)))].filter(Boolean).join('<br>')||'—'}</div><div class="k">Data da concretagem</div></div>`
-    : `<div class="kpi"><div class="v">${andaresComConc}</div><div class="k">Andares concretados</div></div>`;
+    : `<div class="kpi"><div class="v">${pavsComConc}</div><div class="k">Pavimentos concretados</div></div>`;
 
-  const rowA=r=>`<tr><td>${r.pav}</td><td class="mono">${r.nf}</td><td>${labelTraco(r)}</td><td class="mono">${fmt(r.vol)}</td><td class="mono">${fmtData(r.data)}</td></tr>`;
-  const rowX=x=>`<tr><td>${x.pav}</td><td class="mono">${x.nf}</td><td>${labelTraco(x)}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
+  const rowA=r=>`<tr><td>${r.pav}</td><td style="font-size:12px">${r.elem||'—'}</td><td class="mono">${r.nf}</td><td>${labelTraco(r)}</td><td class="mono">${fmt(r.vol)}</td><td class="mono">${fmtData(r.data)}</td></tr>`;
+  const rowX=x=>`<tr><td>${x.pav}</td><td style="font-size:12px">${x.elem||'—'}</td><td class="mono">${x.nf}</td><td>${labelTraco(x)}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
   const volFooter=(arr,cols)=>{ const tot=arr.reduce((s,r)=>s+(r.vol||0),0); return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${arr.length} NF</td></tr>`; };
 
   const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
@@ -364,18 +365,18 @@ function desenharDash(){
       </div>
       <div>
         <div class="card"><div class="ch">Notas fiscais por pavimento${G.fPav?` · ${G.fPav}`:''}</div>
-          <table><thead><tr><th>Pavimento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Concretagem</th></tr></thead>
-          <tbody>${detA.length?detA.map(rowA).join('')+volFooter(detA,5):'<tr><td colspan="5" class="empty">Sem notas para o filtro.</td></tr>'}</tbody></table></div>
+          <table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Concretagem</th></tr></thead>
+          <tbody>${detA.length?detA.map(rowA).join('')+volFooter(detA,6):'<tr><td colspan="6" class="empty">Sem notas para o filtro.</td></tr>'}</tbody></table></div>
         <div class="card"><div class="ch">Betoneiras recusadas <span class="chip bad">${detX.length}</span>${G.fPav?` · ${G.fPav}`:''}</div>
-          <table><thead><tr><th>Pavimento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Data</th><th>Motivo</th></tr></thead>
-          <tbody>${detX.length?detX.map(rowX).join('')+volFooter(detX,6):'<tr><td colspan="6" class="empty">Nenhuma recusa.</td></tr>'}</tbody></table></div>
+          <table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Traço</th><th>Vol <span class="lc">(m³)</span></th><th>Data</th><th>Motivo</th></tr></thead>
+          <tbody>${detX.length?detX.map(rowX).join('')+volFooter(detX,7):'<tr><td colspan="7" class="empty">Nenhuma recusa.</td></tr>'}</tbody></table></div>
       </div>
     </div>`;
 }
 // volume aceito por NF (uma vez por nota), a partir dos rompimentos da obra
 function volumesAceitos(R){
   const map={};
-  R.forEach(r=>{ if(!map[r.nf]) map[r.nf]={pavId:r.pavId,pav:r.pav,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,data:r.data}; });
+  R.forEach(r=>{ if(!map[r.nf]) map[r.nf]={pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,data:r.data}; });
   return Object.values(map);
 }
 function filtrarAndar(a){ G.fPav=(G.fPav===a)?null:a; render(); }
@@ -459,9 +460,9 @@ function relResultados(){
 function relQuantidades(){
   // betoneiras aceitas (por NF, via rompimentos) + recusadas
   const map={};
-  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
+  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,elem:r.elem,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
   const aceitas=Object.values(map);
-  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada'}));
+  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,elem:x.elem,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada',motivo:x.motivo}));
   return aceitas.concat(recus).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
 }
 
@@ -508,14 +509,17 @@ function exportarRelPDF(tipo){
     const todas=relQuantidades();
     const aceitas=todas.filter(r=>r.aceite==='Aceita');
     const recusadas=todas.filter(r=>r.aceite==='Recusada');
-    const head=['Pavimento','Data','NF','Traço','Volume (m³)'];
     const bloco=(titulo, arr, startY)=>{
+      const ehRec=titulo.indexOf('recusadas')>=0||titulo.indexOf('Recusadas')>=0;
+      const head=ehRec?['Pavimento','Elemento','Data','NF','Traço','Volume (m³)','Motivo']:['Pavimento','Elemento','Data','NF','Traço','Volume (m³)'];
       doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
       doc.text(titulo+'  ('+arr.length+')', 12, startY);
-      doc.autoTable({ head:[head], body:arr.map(r=>[r.pav,fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)]),
+      doc.autoTable({ head:[head], body:arr.map(r=> ehRec
+          ? [r.pav,r.elem||'—',fmtData(r.data),String(r.nf),r.traco,fmt(r.vol),r.motivo||'—']
+          : [r.pav,r.elem||'—',fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)]),
         startY:startY+3, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
         headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
-        columnStyles:{4:{halign:'right'}}, margin:{left:12,right:12} });
+        columnStyles:{5:{halign:'right'}}, margin:{left:12,right:12} });
       // somatório por traço
       const porTraco=somaPorTraco(arr);
       doc.autoTable({ body:porTraco.map(t=>[{content:'Total — '+t.traco,styles:{fontStyle:'bold'}},{content:fmt(t.vol)+' m³',styles:{halign:'right',fontStyle:'bold'}}])
@@ -560,7 +564,10 @@ function exportarRelExcel(tipo){
     const aceitas=todas.filter(r=>r.aceite==='Aceita');
     const recusadas=todas.filter(r=>r.aceite==='Recusada');
     const monta=(arr,titulo)=>{
-      const linhas=arr.map(r=>({Pavimento:r.pav,Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol}));
+      const ehRec=titulo.indexOf('Recusadas')>=0;
+      const linhas=arr.map(r=> ehRec
+        ? {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Motivo:r.motivo||''}
+        : {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol});
       linhas.push({});
       somaPorTraco(arr).forEach(t=>linhas.push({Pavimento:'TOTAL',Traço:t.traco,'Volume (m³)':Number(t.vol.toFixed(1))}));
       linhas.push({Pavimento:'TOTAL GERAL','Volume (m³)':Number(arr.reduce((s,r)=>s+r.vol,0).toFixed(1))});
