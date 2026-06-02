@@ -342,7 +342,7 @@ function desenharDash(){
   const rowF=d=>`<tr><td>${d.pav}</td><td style="font-size:12px">${d.elem||'—'}</td><td class="mono">${d.nf}</td><td class="mono">${fmt(d.vol)}</td><td>${labelTraco(d)}</td><td class="mono">${d.idade}d</td><td class="mono">${fmt(d.resultado)} MPa</td><td>${d.conforme?'<span class="chip ok">conforme</span>':'<span class="chip bad">não conf.</span>'}</td></tr>`;
   const rowP=c=>`<tr><td>${c.pav}</td><td style="font-size:12px">${c.elem||'—'}</td><td class="mono">${c.nf}</td><td class="mono">${fmt(c.vol)}</td><td class="mono">fck ${c.fck||'—'}</td><td class="mono">${c.idade}d</td><td class="mono">${fmtData(c.prev)}</td><td><span class="chip warn">aguardando final</span></td></tr>`;
   const rowX=x=>`<tr><td>${x.pav}</td><td style="font-size:12px">${x.elem||'—'}</td><td class="mono">${x.nf}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">fck ${x.fck||'—'}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
-  const volF=(arr,cols)=>{ const tot=arr.reduce((s,r)=>s+(r.vol||0),0); return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${arr.length} registro(s)</td></tr>`; };
+  const volF=(arr,cols)=>{ const m={}; arr.forEach(r=>{ if(!(r.nf in m)) m[r.nf]=r.vol||0; }); const tot=Object.values(m).reduce((s,v)=>s+v,0); const nfs=Object.keys(m).length; return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${nfs} NF · ${arr.length} registro(s)</td></tr>`; };
 
   const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
 
