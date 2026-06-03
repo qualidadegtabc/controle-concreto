@@ -342,10 +342,12 @@ async function exportarBackup(){
   }
 }
 // lê a tabela inteira em páginas de 1000 (limite do Supabase)
-async function pegarTudo(tabela, cols){
+async function pegarTudo(tabela, cols, mod){
   let todos=[], de=0; const passo=1000;
   while(true){
-    const { data, error } = await sb.from(tabela).select(cols).range(de, de+passo-1);
+    let q = sb.from(tabela).select(cols);
+    if(mod) q = mod(q);
+    const { data, error } = await q.range(de, de+passo-1);
     if(error) throw error;
     todos = todos.concat(data||[]);
     if(!data || data.length<passo) break;
@@ -508,12 +510,9 @@ function hojeISO(){ return new Date().toISOString().slice(0,10); }
 
 // busca TODAS as duplas pendentes (idade programada, não rompidas) — sem limite de data
 async function buscarTodasPendentes(){
-  const { data, error } = await sb.from('corpos_prova')
-    .select('id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)')
-    .not('idade_prevista','is',null)
-    .eq('descartado',false)
-    .order('numero',{ascending:true});
-  if(error) throw error;
+  const data = await pegarTudo('corpos_prova',
+    'id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)',
+    q=>q.not('idade_prevista','is',null).eq('descartado',false).order('numero',{ascending:true}));
   const semRomp = (data||[]).filter(cp=> asArr(cp.rompimentos).length===0);
   const grp={};
   semRomp.forEach(cp=>{
@@ -569,10 +568,9 @@ let pendentesTodas = []; // cache de todas as duplas pendentes
 
 // betoneiras cujo rompimento de 28d (ou mais) já saiu E ficou conforme (resultado >= fck)
 async function buscarBetoneiras28Conforme(){
-  const { data, error } = await sb.from('rompimentos')
-    .select('resultado_mpa,prensa1_tf,idade_real,corpos_prova!inner(betoneira_id,betoneiras!inner(fck))')
-    .gte('idade_real', 28);
-  if(error) throw error;
+  const data = await pegarTudo('rompimentos',
+    'resultado_mpa,prensa1_tf,idade_real,corpos_prova!inner(betoneira_id,betoneiras!inner(fck))',
+    q=>q.gte('idade_real', 28));
   const ok = new Set();
   (data||[]).forEach(r=>{
     const cp=r.corpos_prova; if(!cp||!cp.betoneiras) return;
@@ -888,14 +886,12 @@ let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataR
 
 async function buscarResultados(){
   // CPs (não descartados) com betoneira+concretagem+elemento+concreteira e rompimentos
-  const { data, error } = await sb.from('corpos_prova')
-    .select('id,numero,idade_prevista,data_prevista,descartado,betoneira_id,'+
+  const data = await pegarTudo('corpos_prova',
+      'id,numero,idade_prevista,data_prevista,descartado,betoneira_id,'+
       'betoneiras!inner(id,nota_fiscal,lacre,fck,slump_medido,agua_adicionada,volume,aceita,'+
         'concretagens!inner(id,obra_id,data_concretagem,obras!inner(nome),pavimentos!inner(id,nome),elementos(nome),concreteiras(nome))),'+
-      'rompimentos(prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao)')
-    .eq('descartado', false)
-    .order('numero',{ascending:true});
-  if(error) throw error;
+      'rompimentos(prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao)',
+      q=>q.eq('descartado', false).order('numero',{ascending:true}));
   const cps=(data||[]).filter(cp=>cp.betoneiras && cp.betoneiras.aceita);
   // agrupa CPs por betoneira
   const porBt={};
