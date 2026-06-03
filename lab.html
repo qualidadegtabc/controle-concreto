@@ -158,7 +158,7 @@ function casca(){
     <div class="topbar">
       <div class="logo">GT&amp;ABC</div>
       <div><div class="ttl">Laboratório</div><div class="co">Controle Tecnológico de Concreto</div></div>
-      <div class="right"><span>${userEmail}</span>${perfisUsuario.includes('admin')?`<button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="abrirAuditoria()">Auditoria</button><button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="exportarBackup()">Exportar tudo</button>`:''}<button class="sair" onclick="sair()">Sair</button></div>
+      <div class="right"><span>${userEmail}</span>${perfisUsuario.includes('admin')?`<button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="abrirConcretagens()">Concretagens</button><button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="abrirAuditoria()">Auditoria</button><button class="sair" style="border-color:var(--accent);color:var(--accent)" onclick="exportarBackup()">Exportar tudo</button>`:''}<button class="sair" onclick="sair()">Sair</button></div>
     </div>
     <div class="tabs">
       <button class="tab ${abaAtual==='programar'?'on':''}" onclick="irAba('programar')">Programar idades</button>
@@ -168,6 +168,91 @@ function casca(){
     <div class="wrap" id="wrap"></div>`;
 }
 function irAba(a){ abaAtual=a; render(); }
+
+// ---- GERENCIAR CONCRETAGENS (admin) — excluir com cascata ----
+let CONCS = { linhas:[], fObra:'', confirmId:null };
+async function abrirConcretagens(){
+  if(!perfisUsuario.includes('admin')) return;
+  abaAtual='concretagens';
+  const wrap=document.getElementById('wrap');
+  wrap.innerHTML='<div class="officehead"><h2>Concretagens</h2></div><div class="estado">Carregando…</div>';
+  try{
+    // concretagens + contagem de betoneiras (e via betoneiras, dá pra estimar)
+    const concs = await pegarTudo('concretagens',
+      'id,data_concretagem,origem,obras!inner(nome),pavimentos!inner(nome),elementos(nome),betoneiras(id,corpos_prova(id,rompimentos(id)))',
+      q=>q.order('data_concretagem',{ascending:false}));
+    CONCS.linhas = (concs||[]).map(c=>{
+      const bts=asArr(c.betoneiras);
+      let ncp=0, nromp=0;
+      bts.forEach(b=>{ const cps=asArr(b.corpos_prova); ncp+=cps.length; cps.forEach(cp=>nromp+=asArr(cp.rompimentos).length); });
+      return { id:c.id, data:c.data_concretagem, origem:c.origem,
+        obra:c.obras.nome, pav:c.pavimentos.nome, elem:(c.elementos&&c.elementos.nome)||'—',
+        nbet:bts.length, ncp, nromp };
+    });
+    desenharConcretagens();
+  }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
+}
+function concFiltradas(){
+  return CONCS.linhas.filter(c=>!CONCS.fObra || c.obra===CONCS.fObra);
+}
+function desenharConcretagens(){
+  const wrap=document.getElementById('wrap');
+  const obras=[...new Set(CONCS.linhas.map(c=>c.obra))].sort();
+  const optObra=['<option value="">Todas as obras</option>'].concat(obras.map(o=>`<option value="${o}" ${o===CONCS.fObra?'selected':''}>${o}</option>`)).join('');
+  const lista=concFiltradas();
+  const linhas=lista.map(c=>{
+    const emConf = CONCS.confirmId===c.id;
+    const btn = emConf
+      ? `<button onclick="confirmarExcluirConc(${c.id})" style="background:var(--bad);color:#fff;border:0;border-radius:7px;padding:8px 12px;font-weight:700;cursor:pointer">Confirmar exclusão</button>
+         <button onclick="cancelarExcluirConc()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:6px">cancelar</button>`
+      : `<button onclick="pedirExcluirConc(${c.id})" style="background:none;border:1px solid var(--bad);color:var(--bad);border-radius:7px;padding:7px 12px;cursor:pointer">Excluir</button>`;
+    return `<tr ${emConf?'style="background:#fdecea"':''}>
+      <td>${fmtData(c.data)}</td>
+      <td>${c.obra}<div style="color:var(--muted);font-size:12px">${c.pav}</div></td>
+      <td style="font-size:12px">${c.elem}</td>
+      <td class="mono" style="text-align:center">${c.nbet}</td>
+      <td class="mono" style="text-align:center">${c.ncp}</td>
+      <td class="mono" style="text-align:center">${c.nromp}</td>
+      <td>${c.origem==='importado'?'<span class="chip">importado</span>':'<span class="chip" style="background:#e7f0e9">sistema</span>'}</td>
+      <td style="text-align:right">${btn}</td>
+    </tr>${emConf?`<tr style="background:#fdecea"><td colspan="8" style="color:var(--bad);font-size:12px;padding-top:0">⚠ Isto vai apagar a concretagem e <b>todas</b> as ${c.nbet} betoneiras, ${c.ncp} corpos de prova e ${c.nromp} rompimentos. Ação irreversível.</td></tr>`:''}`;
+  }).join('');
+  wrap.innerHTML=`
+    <div class="officehead"><h2>Concretagens</h2><p>Excluir concretagens lançadas erradas. A exclusão remove em cascata as betoneiras, corpos de prova e rompimentos. Fica registrada na auditoria.</p></div>
+    <div class="filters" style="display:flex;gap:14px;align-items:flex-end;margin-bottom:16px">
+      <div class="office-fld"><label>Obra</label><select onchange="CONCS.fObra=this.value;CONCS.confirmId=null;desenharConcretagens()">${optObra}</select></div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr><th style="width:100px">Data</th><th>Obra · Pav</th><th style="width:120px">Elemento</th>
+        <th style="width:50px;text-align:center">Bet.</th><th style="width:50px;text-align:center">CP</th><th style="width:60px;text-align:center">Romp.</th>
+        <th style="width:90px">Origem</th><th style="width:190px"></th></tr></thead>
+      <tbody>${linhas||'<tr><td colspan="8" class="estado" style="padding:30px">Nenhuma concretagem.</td></tr>'}</tbody></table>
+    </div>
+    <div class="cs" style="margin-top:10px">${lista.length} concretagem(ns).</div>`;
+}
+function pedirExcluirConc(id){ CONCS.confirmId=id; desenharConcretagens(); }
+function cancelarExcluirConc(){ CONCS.confirmId=null; desenharConcretagens(); }
+async function confirmarExcluirConc(id){
+  const c=CONCS.linhas.find(x=>x.id===id); if(!c) return;
+  // 2º "tem certeza" (confirmação dupla)
+  if(!confirm(`Tem certeza? Vai excluir definitivamente:\n\n${c.obra} · ${c.pav} · ${fmtData(c.data)}\n${c.nbet} betoneira(s), ${c.ncp} corpo(s) de prova, ${c.nromp} rompimento(s).\n\nNão dá para desfazer.`)) return;
+  if(estaOffline()){ alert('Sem internet — a exclusão NÃO foi feita. Tente quando o sinal voltar.'); return; }
+  try{
+    // apaga em cascata: rompimentos -> cps -> betoneiras -> concretagem
+    const bts = await sb.from('betoneiras').select('id,corpos_prova(id)').eq('concretagem_id', id);
+    if(bts.error) throw bts.error;
+    const btIds = (bts.data||[]).map(b=>b.id);
+    let cpIds=[]; (bts.data||[]).forEach(b=>asArr(b.corpos_prova).forEach(cp=>cpIds.push(cp.id)));
+    if(cpIds.length){
+      const r1=await sb.from('rompimentos').delete().in('corpo_prova_id', cpIds); if(r1.error) throw r1.error;
+      const r2=await sb.from('corpos_prova').delete().in('id', cpIds); if(r2.error) throw r2.error;
+    }
+    if(btIds.length){ const r3=await sb.from('betoneiras').delete().in('id', btIds); if(r3.error) throw r3.error; }
+    const r4=await sb.from('concretagens').delete().eq('id', id); if(r4.error) throw r4.error;
+    CONCS.confirmId=null;
+    await abrirConcretagens(); // recarrega a lista
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a exclusão NÃO foi feita.':'Não consegui excluir: '+(e.message||e))); }
+}
 
 // ---- EDITAR PAVIMENTO DE UMA CONCRETAGEM (admin) ----
 // abre uma lista suspensa na própria linha
