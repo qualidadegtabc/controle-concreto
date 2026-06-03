@@ -409,7 +409,7 @@ async function abaProgramar(){
   try{ progGrupos=await buscarParaProgramar(); progEscolhas={}; desenharProgramar(); }
   catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
-const IDADES=[3,4,7,28,63];
+const IDADES=[3,4,5,7,28,63];
 function selIdade(chave){
   const opts=IDADES.map(x=>`<option value="${x}" ${progEscolhas[chave]==x?'selected':''}>${x} dias</option>`).join('');
   return `<select onchange="progEscolhas['${chave}']=+this.value;desenharProgramar()"><option value="" ${!progEscolhas[chave]?'selected':''} disabled>idade…</option>${opts}</select>`;
@@ -679,7 +679,7 @@ function desenharRomper(){
   const obras=['Todas',...new Set(rompGrupos.map(g=>g.obra))];
   let lista = rompGrupos;
   if(rompFiltroObra!=='Todas') lista = lista.filter(g=>g.obra===rompFiltroObra);
-  const IDADES=[3,4,7,28,63];
+  const IDADES=[3,4,5,7,28,63];
   const hoje=hojeISO();
   const temAtrasados = pendentesTodas.some(d=>d.prevista<hoje);
 
