@@ -584,6 +584,7 @@ let rompInputs = {};        // { cpId: tf }
 let rompObs = {};           // { duplaKey: obs }
 let rompFiltroObra = 'Todas';
 let rompFiltroData = '';     // '' = nenhuma ainda; 'ATRASADOS' ou uma data ISO
+let rompIncluirAtrasados = true; // se a data selecionada também puxa os atrasados anteriores
 let rompDatasDisp = [];      // datas previstas com CP a romper
 let rompidosDia = [];        // rompimentos já confirmados (exibição)
 let editRomp = {};           // edição de dupla rompida
@@ -697,8 +698,13 @@ function aplicarFiltroRomper(){
   if(rompFiltroData==='ATRASADOS'){
     rompGrupos = pendentesTodas.filter(d=>d.prevista<hoje);
   } else if(rompFiltroData){
-    // CPs daquela data + atrasados (anteriores)
-    rompGrupos = pendentesTodas.filter(d=>d.prevista<=rompFiltroData);
+    if(rompIncluirAtrasados){
+      // CPs daquela data + atrasados (anteriores)
+      rompGrupos = pendentesTodas.filter(d=>d.prevista<=rompFiltroData);
+    } else {
+      // só os CPs previstos exatamente para a data selecionada
+      rompGrupos = pendentesTodas.filter(d=>d.prevista===rompFiltroData);
+    }
   } else {
     rompGrupos = [];
   }
@@ -783,6 +789,11 @@ function desenharRomper(){
         <select style="min-width:200px" onchange="trocarDataRomper(this.value)">${dataOpts}</select></div>
       <div><label style="display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Obra</label>
         <select onchange="rompFiltroObra=this.value;desenharRomper()">${obras.map(o=>`<option ${o===rompFiltroObra?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div style="align-self:center;padding-bottom:2px">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13.5px;color:var(--ink);user-select:none">
+          <input type="checkbox" ${rompIncluirAtrasados?'checked':''} onchange="rompIncluirAtrasados=this.checked;aplicarFiltroRomper();desenharRomper()" style="width:17px;height:17px;accent-color:var(--accent);cursor:pointer">
+          Incluir atrasados
+        </label></div>
       <div style="margin-left:auto;color:var(--muted);font-size:13px;align-self:center">${lista.length} dupla(s) a romper</div>
     </div>`;
 
