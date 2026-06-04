@@ -854,8 +854,8 @@ function zerarEVoltar(){
 function voltar(){
   if(tela==='abrir') verHome();
   else if(tela==='betoneira'){ if(draft.betoneiras.length){ if(confirm('Voltar para os dados da concretagem? As betoneiras já gravadas continuam salvas.')) abrirConcretagem(); } else abrirConcretagem(); }
-  else if(tela==='concluidas' || tela==='pendentes') verHome();
-  else if(tela==='detalhe'){ if(detalheOrigem==='pendentes') verPendentes(); else verConcluidas(); }
+  else if(tela==='concluidas' || tela==='pendentes' || tela==='andamento') verHome();
+  else if(tela==='detalhe'){ if(detalheOrigem==='pendentes') verPendentes(); else if(detalheOrigem==='andamento') verAndamento(); else verConcluidas(); }
 }
 
 // ---------- INÍCIO ----------
