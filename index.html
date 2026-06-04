@@ -229,6 +229,7 @@ function verHome(){
     <div class="hello">Olá!</div>
     <div class="sub" style="margin-bottom:20px">O que vamos fazer?</div>
     <button class="homebtn primary" onclick="abrirConcretagem()"><span class="hi">+</span><span><b>Nova concretagem</b><small>registrar uma concretagem no canteiro</small></span></button>
+    <button class="homebtn" onclick="verAndamento()"><span class="hi">⏵</span><span><b>Concretagens em andamento</b><small>continuar uma concretagem não finalizada</small></span></button>
     <button class="homebtn" onclick="verConcluidas()"><span class="hi">✓</span><span><b>Concretagens concluídas</b><small>ver concretagens finalizadas</small></span></button>
     <button class="homebtn" onclick="verPendentes()"><span class="hi">✎</span><span><b>Pendentes de coleta de assinatura</b><small>coletar assinaturas que faltam</small></span></button>`;
 }
@@ -601,6 +602,76 @@ async function verPendentes(){
   try{
     const lista=await buscarConcretagens('pendentes');
     body.innerHTML = lista.length ? lista.map(m=>cardConcretagem(m,'pendentes')).join('') : '<div class="estado">Nenhuma assinatura pendente. 🎉</div>';
+  }catch(e){ erro(e); }
+}
+
+// ---------- EM ANDAMENTO (não finalizadas) ----------
+async function verAndamento(){
+  tela='andamento';
+  screen.innerHTML = casca('Concretagens em andamento', {back:true});
+  document.getElementById('foot').style.display='none';
+  const body=document.getElementById('body'); body.innerHTML='<div class="estado">Carregando…</div>';
+  try{
+    const { data, error } = await sb.from('concretagens')
+      .select('id,data_concretagem,obras!inner(nome),pavimentos!inner(nome),betoneiras(volume,aceita)')
+      .eq('finalizada', false)
+      .order('data_concretagem',{ascending:false});
+    if(error) throw error;
+    const lista=data||[];
+    if(!lista.length){ body.innerHTML='<div class="estado">Nenhuma concretagem em andamento.</div>'; return; }
+    body.innerHTML = lista.map(m=>{
+      const bts=m.betoneiras||[];
+      const aceitas=bts.filter(b=>b.aceita).length, recusas=bts.length-aceitas;
+      const vol=bts.filter(b=>b.aceita).reduce((s,b)=>s+(Number(b.volume)||0),0);
+      return `<div class="tcard" style="cursor:pointer" onclick="continuarConcretagem(${m.id})">
+        <div style="font-weight:700">${m.obras.nome} · ${m.pavimentos.nome}</div>
+        <div class="sub" style="margin-top:6px">${fmtData(m.data_concretagem)} · ${bts.length} betoneira(s) lançada(s)${recusas?' · '+recusas+' recusa(s)':''} · ${vol.toFixed(1)} m³</div>
+        <span style="display:inline-block;margin-top:10px;background:#fbeee2;color:var(--accent-ink);border:1px solid #e3c3a6;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700">em andamento</span>
+        <div style="margin-top:8px;color:var(--accent);font-size:12.5px;font-weight:700">continuar ›</div>
+      </div>`;
+    }).join('');
+  }catch(e){ erro(e); }
+}
+
+// reabre uma concretagem não finalizada, recarregando o draft com o que já existe
+async function continuarConcretagem(concId){
+  const body=document.getElementById('body'); if(body) body.innerHTML='<div class="estado">Abrindo…</div>';
+  try{
+    const { data:c, error:e1 } = await sb.from('concretagens')
+      .select('id,obra_id,pavimento_id,elemento_id,concreteira_id,data_concretagem,obras!inner(nome),pavimentos!inner(nome),'+
+              'betoneiras(id,fck,slump_especificado,tolerancia,traco_descricao)')
+      .eq('id', concId).single();
+    if(e1) throw e1;
+    // garante que os caches (obras/elementos/concreteiras) estão carregados
+    if(!cache.obras.length){
+      const [obras,elementos,concreteiras] = await Promise.all([
+        sb.from('obras').select('*').eq('ativa',true).order('nome'),
+        sb.from('elementos').select('*').eq('ativo',true).order('ordem'),
+        sb.from('concreteiras').select('*').eq('ativa',true).order('nome'),
+      ]);
+      if(obras.data) cache.obras=obras.data;
+      if(elementos.data) cache.elementos=elementos.data;
+      if(concreteiras.data) cache.concreteiras=concreteiras.data;
+    }
+    await pavimentosDe(c.obra_id);
+    // reconstrói o draft
+    draft.concId = c.id;
+    draft.obraId = c.obra_id; draft.obraNome = c.obras.nome;
+    draft.pavId = c.pavimento_id; draft.pavNome = c.pavimentos.nome;
+    draft.elementoId = c.elemento_id; draft.concreteiraId = c.concreteira_id;
+    draft.data = c.data_concretagem;
+    // traços: a partir das betoneiras já lançadas (distintos); se nenhuma, usa um padrão
+    const bts = c.betoneiras||[];
+    const vistos={}; const tracos=[];
+    bts.forEach(b=>{
+      const k=[b.fck,b.slump_especificado,b.tolerancia,b.traco_descricao].join('|');
+      if(!vistos[k]){ vistos[k]=1; tracos.push({fck:b.fck!=null?String(b.fck):'', slump:b.slump_especificado!=null?String(b.slump_especificado):'16', tol:b.tolerancia!=null?String(b.tolerancia):'3', desc:b.traco_descricao||''}); }
+    });
+    draft.tracos = tracos.length? tracos : [{fck:'',slump:'16',tol:'3',desc:''}];
+    draft.betoneiras = bts.map(b=>({id:b.id, salva:true}));
+    draft.totalCP = 0;
+    draft.cur = novaBetoneira();
+    telaBetoneira();
   }catch(e){ erro(e); }
 }
 
