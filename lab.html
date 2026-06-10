@@ -254,6 +254,39 @@ async function confirmarExcluirConc(id){
   }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a exclusão NÃO foi feita.':'Não consegui excluir: '+(e.message||e))); }
 }
 
+// ---- EDITAR ELEMENTO DE UMA CONCRETAGEM (admin) ----
+let elemEditId = null;
+let elemCache = null; // lista de elementos (carregada uma vez)
+async function editarElemento(concId){
+  if(!perfisUsuario.includes('admin')) return;
+  if(estaOffline()){ alert('Sem internet — não é possível editar agora. Tente quando o sinal voltar.'); return; }
+  try{
+    if(!elemCache){
+      const { data, error } = await sb.from('elementos').select('id,nome,ordem').eq('ativo',true).order('ordem');
+      if(error) throw error;
+      elemCache = data||[];
+    }
+    elemEditId = concId; pavEditId = null;
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — tente quando o sinal voltar.':'Não consegui abrir os elementos: '+(e.message||e))); }
+}
+function cancelarEditaElem(){ elemEditId=null; desenharResultados(); }
+async function salvarElemento(concId, novoElemId){
+  novoElemId = parseInt(novoElemId,10);
+  if(!novoElemId) return;
+  const novo=(elemCache||[]).find(e=>e.id===novoElemId);
+  if(!novo){ alert('Elemento inválido.'); return; }
+  if(!confirm(`Alterar o elemento desta concretagem para "${novo.nome}"?\n\nMuda o elemento de TODAS as betoneiras/NFs desta mesma concretagem.`)) return;
+  if(estaOffline()){ alert('Sem internet — a alteração NÃO foi salva.'); return; }
+  try{
+    const { error } = await sb.from('concretagens').update({ elemento_id: novoElemId }).eq('id', concId);
+    if(error) throw error;
+    elemEditId=null;
+    resLinhas = await buscarResultados();
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar: '+(e.message||e))); }
+}
+
 // ---- EDITAR PAVIMENTO DE UMA CONCRETAGEM (admin) ----
 // abre uma lista suspensa na própria linha
 let pavEditId = null;          // concId em edição
@@ -985,7 +1018,7 @@ async function buscarResultados(){
   const data = await pegarTudo('corpos_prova',
       'id,numero,idade_prevista,data_prevista,descartado,betoneira_id,'+
       'betoneiras!inner(id,nota_fiscal,lacre,fck,slump_medido,agua_adicionada,volume,aceita,'+
-        'concretagens!inner(id,obra_id,data_concretagem,obras!inner(nome),pavimentos!inner(id,nome),elementos(nome),concreteiras(nome))),'+
+        'concretagens!inner(id,obra_id,data_concretagem,obras!inner(nome),pavimentos!inner(id,nome),elementos(id,nome),concreteiras(nome))),'+
       'rompimentos(prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao)',
       q=>q.eq('descartado', false).order('numero',{ascending:true}));
   const cps=(data||[]).filter(cp=>cp.betoneiras && cp.betoneiras.aceita);
@@ -1023,7 +1056,7 @@ async function buscarResultados(){
         cpLabel: par.map(p=>String(p.numero).padStart(3,'0')).join('·'),
         obra:c.obras.nome, pav:c.pavimentos.nome,
         concId:c.id, obraId:c.obra_id, pavId:c.pavimentos.id,
-        elemento:(c.elementos&&c.elementos.nome)||'—', concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
+        elemento:(c.elementos&&c.elementos.nome)||'—', elemId:(c.elementos&&c.elementos.id)||null, concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
         nf:bt.nota_fiscal, lacre:bt.lacre||'—', fck:bt.fck,
         slump:bt.slump_medido, agua:bt.agua_adicionada, volume:bt.volume,
         moldagem:c.data_concretagem, idade, dataRomp, resultado, conf, obs,
@@ -1137,7 +1170,15 @@ function desenharResultados(){
         }
         return `<button onclick="editarPavimento(${l.concId}, ${l.obraId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o pavimento (admin)">${l.pav} ✎</button>`;
       })()}</td>
-      <td style="font-size:12px">${l.elemento}</td><td style="font-size:12px">${l.concreteira}</td>
+      <td style="font-size:12px">${(() => {
+        if(!perfisUsuario.includes('admin')) return l.elemento;
+        if(elemEditId===l.concId){
+          const opts=(elemCache||[]).map(e=>`<option value="${e.id}" ${e.id===l.elemId?'selected':''}>${e.nome}</option>`).join('');
+          return `<select onchange="salvarElemento(${l.concId}, this.value)" style="padding:6px 8px;font-size:12px;max-width:160px">${opts}</select>`+
+            `<button onclick="cancelarEditaElem()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:4px" title="cancelar">✕</button>`;
+        }
+        return `<button onclick="editarElemento(${l.concId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o elemento (admin)">${l.elemento} ✎</button>`;
+      })()}</td><td style="font-size:12px">${l.concreteira}</td>
       <td class="mono">${l.nf}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
       <td class="mono">${n1(l.slump)}</td><td class="mono">${n1(l.agua)}</td><td class="mono">${n1(l.volume)}</td>
       <td class="mono">${fmtData(l.moldagem)}</td><td class="mono">${l.idade!=null?l.idade+'d':'—'}</td>
