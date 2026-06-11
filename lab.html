@@ -254,6 +254,57 @@ async function confirmarExcluirConc(id){
   }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a exclusão NÃO foi feita.':'Não consegui excluir: '+(e.message||e))); }
 }
 
+// ---- EDITAR OBRA (+ pavimento) DE UMA CONCRETAGEM (admin) ----
+let obraEditId = null;
+let obraEditSel = null;   // obra escolhida no dropdown (antes de salvar)
+let obraCache = null;
+async function editarObra(concId, obraIdAtual){
+  if(!perfisUsuario.includes('admin')) return;
+  if(estaOffline()){ alert('Sem internet — não é possível editar agora. Tente quando o sinal voltar.'); return; }
+  try{
+    if(!obraCache){
+      const { data, error } = await sb.from('obras').select('id,nome').order('nome');
+      if(error) throw error;
+      obraCache = data||[];
+    }
+    // garante pavimentos da obra atual carregados
+    await carregarPavsObra(obraIdAtual);
+    obraEditId = concId; obraEditSel = obraIdAtual; pavEditId=null; elemEditId=null;
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — tente quando o sinal voltar.':'Não consegui abrir as obras: '+(e.message||e))); }
+}
+async function carregarPavsObra(obraId){
+  obraId=parseInt(obraId,10);
+  if(!pavCacheObra[obraId]){
+    const { data, error } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
+    if(error) throw error;
+    pavCacheObra[obraId]=data||[];
+  }
+}
+async function selecionarObraEdit(concId, novaObraId){
+  obraEditSel = parseInt(novaObraId,10);
+  try{ await carregarPavsObra(obraEditSel); }catch(_){}
+  desenharResultados();
+}
+function cancelarEditaObra(){ obraEditId=null; obraEditSel=null; desenharResultados(); }
+async function salvarObra(concId){
+  const novaObra = obraEditSel;
+  const selPav = document.getElementById('selPavObra_'+concId);
+  const novoPav = selPav ? parseInt(selPav.value,10) : null;
+  if(!novaObra || !novoPav){ alert('Escolha a obra e o pavimento.'); return; }
+  const oNome=(obraCache||[]).find(o=>o.id===novaObra);
+  const pNome=(pavCacheObra[novaObra]||[]).find(p=>p.id===novoPav);
+  if(!confirm(`Mover esta concretagem para:\n\nObra: ${oNome?oNome.nome:novaObra}\nPavimento: ${pNome?pNome.nome:novoPav}\n\nMuda TODAS as betoneiras/NFs desta mesma concretagem.`)) return;
+  if(estaOffline()){ alert('Sem internet — a alteração NÃO foi salva.'); return; }
+  try{
+    const { error } = await sb.from('concretagens').update({ obra_id: novaObra, pavimento_id: novoPav }).eq('id', concId);
+    if(error) throw error;
+    obraEditId=null; obraEditSel=null;
+    resLinhas = await buscarResultados();
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar: '+(e.message||e))); }
+}
+
 // ---- EDITAR ELEMENTO DE UMA CONCRETAGEM (admin) ----
 let elemEditId = null;
 let elemCache = null; // lista de elementos (carregada uma vez)
@@ -1160,7 +1211,22 @@ function desenharResultados(){
     const naoConf = l.conf==='nao';
     html += `<tr ${naoConf?'style="background:#fdf1ee"':''}>
       <td><span class="cpchip" style="font-size:14px;padding:6px 9px;min-width:auto">${l.cpLabel}</span></td>
-      <td>${l.obra}</td><td style="font-size:12px">${(() => {
+      <td>${(() => {
+        if(!perfisUsuario.includes('admin')) return l.obra;
+        if(obraEditId===l.concId){
+          const obrasOpts=(obraCache||[]).map(o=>`<option value="${o.id}" ${o.id===(obraEditSel||l.obraId)?'selected':''}>${o.nome}</option>`).join('');
+          const novaObra = obraEditSel || l.obraId;
+          const pavs = pavCacheObra[novaObra]||[];
+          const pavOpts = pavs.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+          return `<div style="display:flex;flex-direction:column;gap:5px">
+            <select onchange="selecionarObraEdit(${l.concId}, this.value)" style="padding:5px 7px;font-size:12px;max-width:150px">${obrasOpts}</select>
+            <select id="selPavObra_${l.concId}" style="padding:5px 7px;font-size:12px;max-width:150px">${pavOpts||'<option>carregando…</option>'}</select>
+            <div><button onclick="salvarObra(${l.concId})" style="background:var(--accent);color:#fff;border:0;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer">Salvar</button>
+            <button onclick="cancelarEditaObra()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:4px">✕</button></div>
+          </div>`;
+        }
+        return `<button onclick="editarObra(${l.concId}, ${l.obraId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir a obra (admin)">${l.obra} ✎</button>`;
+      })()}</td><td style="font-size:12px">${(() => {
         if(!perfisUsuario.includes('admin')) return l.pav;
         if(pavEditId===l.concId){
           const pavs=pavCacheObra[l.obraId]||[];
