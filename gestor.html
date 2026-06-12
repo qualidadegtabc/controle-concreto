@@ -28,16 +28,17 @@ button{font-family:inherit;cursor:pointer}input,select{font-family:inherit}
 .tab{padding:12px 22px;border:0;background:none;font-weight:700;font-size:15px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
 .tab.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
 
-.wrap{max-width:1180px;margin:0 auto;padding:26px}
+.wrap{max-width:1480px;margin:0 auto;padding:26px}
 .officehead h2{font-size:22px;margin:0 0 4px}
 .officehead p{color:var(--muted);margin:0 0 20px;font-size:14px}
 
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
 .ch{font-weight:700;font-size:16px;margin-bottom:12px}
 
-table{width:100%;border-collapse:collapse;font-size:13px}
+.tscroll{width:100%}
+table{width:100%;border-collapse:collapse;font-size:13px;table-layout:auto}
+td{padding:10px 11px;border-bottom:1px solid var(--line);word-break:break-word;overflow-wrap:anywhere}
 th{background:var(--head);text-align:left;padding:10px 11px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#524d44;font-weight:700;border-bottom:1px solid var(--line)}
-td{padding:10px 11px;border-bottom:1px solid var(--line)}
 tr:last-child td{border-bottom:0}
 .empty{text-align:center;color:var(--muted);padding:22px}
 .sumrow td{background:#faf7ec;font-weight:600}
@@ -53,7 +54,7 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .estado{text-align:center;color:var(--muted);padding:50px 20px;font-size:15px;line-height:1.6}
 .erro{background:#fde8e2;border:1px solid #e0b09f;color:#8a3220;border-radius:10px;padding:14px;font-size:14px;margin-bottom:16px}
 
-.chip{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border:1px solid #e3c3a6;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700}
+.chip{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border:1px solid #e3c3a6;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700;white-space:nowrap}
 .chip.ok{background:#eaf3ec;color:var(--ok);border-color:#bcd2bf}
 .chip.bad{background:#fde8e2;color:#8a3220;border-color:#e0b09f}
 .chip.warn{background:#fcf0d8;color:#8a6a12;border-color:#e6cf95}
@@ -70,8 +71,9 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .kpi .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
 .kpi.alert .v{color:var(--bad)}
 
-.split{display:grid;grid-template-columns:236px 1fr;gap:18px;align-items:start}
+.split{display:grid;grid-template-columns:236px minmax(0,1fr);gap:18px;align-items:start}
 @media(max-width:860px){.split{grid-template-columns:1fr}}
+.split>div:last-child{min-width:0}
 .elevcard{position:sticky;top:14px}
 .elevscroll{max-height:60vh;overflow-y:auto;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fdfcf5}
 .elev{display:flex;flex-direction:column-reverse;gap:3px}
@@ -230,29 +232,29 @@ async function carregarDados(){
 
   // Filtra a OBRA já na consulta (via relação), trazendo só o que é desta obra.
   const romps = await pegarTudo('rompimentos',
-    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))))',
+    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))))',
     q=>q.eq('corpos_prova.betoneiras.concretagens.obra_id', obraId));
   const cpsPend = await pegarTudo('corpos_prova',
-    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))),rompimentos(id)',
+    'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))),rompimentos(id)',
     q=>q.eq('betoneiras.concretagens.obra_id', obraId));
   const recus = await pegarTudo('betoneiras',
-    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome)),motivos_recusa(nome)',
+    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome)),motivos_recusa(nome)',
     q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
 
   const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
     .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
       const mpa=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null);
       return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
-               slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa }; });
+               slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa, obs:b.observacao||'' }; });
   const nfComFinal=new Set(R.filter(r=>ehFinal(r.idade)).map(r=>r.nf));
   const semRomp = cp => !cp.rompimentos || (Array.isArray(cp.rompimentos)?cp.rompimentos.length===0:!cp.rompimentos);
   const P = (cpsPend||[]).filter(cp=>!cp.descartado && semRomp(cp) && cp.betoneiras&&cp.betoneiras.concretagens && cp.idade_prevista!=null && cp.idade_prevista<28)
     .map(cp=>{ const b=cp.betoneiras,c=b.concretagens,p=c.pavimentos;
-      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista }; })
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, vol:Number(b.volume)||0, idade:cp.idade_prevista, data:c.data_concretagem, prev:cp.data_prevista, obs:b.observacao||'' }; })
     .filter(x=>!nfComFinal.has(x.nf));
   const X = (recus||[]).filter(b=>!b.aceita && b.concretagens)
     .map(b=>{ const c=b.concretagens,p=c.pavimentos;
-      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—' }; });
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—', obs:b.observacao||'' }; });
 
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
   G.dados={ pavs, R, P, X, datas };
@@ -282,7 +284,7 @@ async function pegarTudo(tabela, cols, mod){
 function duplasFinais(romps){
   const map={};
   romps.filter(r=>ehFinal(r.idade)).forEach(r=>{ const k=r.nf+'|'+r.idade;
-    if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,dataRomp:r.dataRomp,slumpMed:r.slumpMed,agua:r.agua,mpas:[] };
+    if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,dataRomp:r.dataRomp,slumpMed:r.slumpMed,agua:r.agua,obs:r.obs||'',mpas:[] };
     map[k].mpas.push(r.mpa); });
   return Object.values(map).map(d=>{ const melhor=Math.max(...d.mpas.filter(v=>v!=null),-Infinity);
     return { ...d, resultado:isFinite(melhor)?melhor:null, conforme:isFinite(melhor)?melhor>=(d.fck||0):null }; });
@@ -313,6 +315,18 @@ function desenharDash(){
   const obraNome=G.obraNome||(OBRAS.find(o=>String(o.id)===String(G.obra))||{}).nome||'';
   const {R,P,X}=dadosFiltrados();
   const finais=duplasFinais(R);
+  // parciais: rompidos de idade <28 (com MPa) + pendentes (sem resultado)
+  const parcRompidos=(() => {
+    const map={};
+    R.filter(r=>r.idade!=null && r.idade<28).forEach(r=>{ const k=r.nf+'|'+r.idade;
+      if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,obs:r.obs||'',mpas:[] };
+      map[k].mpas.push(r.mpa); });
+    return Object.values(map).map(d=>{ const m=Math.max(...d.mpas.filter(v=>v!=null),-Infinity);
+      return { ...d, resultado:isFinite(m)?m:null, rompido:true }; });
+  })();
+  const parcPendentes=P.map(p=>({ ...p, resultado:null, rompido:false }));
+  const parciais=parcRompidos.concat(parcPendentes)
+    .sort((a,b)=> (a.data<b.data?1:a.data>b.data?-1: (a.idade-b.idade) || String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true})));
 
   const andares=[]; const andarMap={}; const ordemAndar={}; const pavAndar={};
   D.pavs.forEach(p=>{ const a=andarDe(p.nome); if(!(a in andarMap)){ andarMap[a]={ok:0,nc:0,parc:0,pavIds:[]}; andares.push(a); ordemAndar[a]=p.ordem; } andarMap[a].pavIds.push(p.id); pavAndar[p.id]=a; });
@@ -328,9 +342,9 @@ function desenharDash(){
     return `<button class="pv ${cls} ${sel}" ${style} title="${tip}" onclick="filtrarAndar('${a.replace(/'/g,"\\'")}')">${a}</button>`;
   }).join('');
 
-  let detF=finais,detP=P,detX=X;
+  let detF=finais,detP=parciais,detX=X;
   if(G.fPav){ const ids=new Set((andarMap[G.fPav]||{pavIds:[]}).pavIds);
-    detF=finais.filter(d=>ids.has(d.pavId)); detP=P.filter(p=>ids.has(p.pavId)); detX=X.filter(x=>ids.has(x.pavId)); }
+    detF=finais.filter(d=>ids.has(d.pavId)); detP=parciais.filter(p=>ids.has(p.pavId)); detX=X.filter(x=>ids.has(x.pavId)); }
 
   const kF=G.fPav?detF:finais;
   const conf=kF.filter(d=>d.conforme===true).length, nc=kF.filter(d=>d.conforme===false).length;
@@ -338,10 +352,16 @@ function desenharDash(){
   const kpi4=G.fPav
     ? `<div class="kpi"><div class="v" style="font-size:14px;line-height:1.5">${[...new Set(detF.concat(detP).map(x=>fmtData(x.data)))].filter(Boolean).join('<br>')||'—'}</div><div class="k">Data da concretagem</div></div>`
     : `<div class="kpi"><div class="v">${P.length}</div><div class="k">Parciais pendentes</div></div>`;
+  // volume total (NF distinta) conforme os filtros atuais — soma aceitas: finais + parciais pendentes
+  const volMap={};
+  detF.concat(detP).forEach(r=>{ if(!(r.nf in volMap)) volMap[r.nf]=r.vol||0; });
+  const volTotal=Object.values(volMap).reduce((s,v)=>s+v,0);
+  const nfTotal=Object.keys(volMap).length;
+  const kpiVol=`<div class="kpi"><div class="v">${fmt(volTotal)} <span style="font-size:14px;font-weight:600">m³</span></div><div class="k">Concreto total · ${nfTotal} NF</div></div>`;
 
-  const rowF=d=>`<tr><td>${d.pav}</td><td style="font-size:12px">${d.elem||'—'}</td><td class="mono">${d.nf}</td><td class="mono">${fmt(d.vol)}</td><td>${labelTraco(d)}</td><td class="mono">${d.idade}d</td><td class="mono">${fmt(d.resultado)} MPa</td><td>${d.conforme?'<span class="chip ok">conforme</span>':'<span class="chip bad">não conf.</span>'}</td></tr>`;
-  const rowP=c=>`<tr><td>${c.pav}</td><td style="font-size:12px">${c.elem||'—'}</td><td class="mono">${c.nf}</td><td class="mono">${fmt(c.vol)}</td><td class="mono">fck ${c.fck||'—'}</td><td class="mono">${c.idade}d</td><td class="mono">${fmtData(c.prev)}</td><td><span class="chip warn">aguardando final</span></td></tr>`;
-  const rowX=x=>`<tr><td>${x.pav}</td><td style="font-size:12px">${x.elem||'—'}</td><td class="mono">${x.nf}</td><td class="mono">${fmt(x.vol)}</td><td class="mono">fck ${x.fck||'—'}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td></tr>`;
+  const rowF=d=>`<tr><td>${d.pav}</td><td style="font-size:12px">${d.elem||'—'}</td><td class="mono">${d.nf}</td><td class="mono">${fmt(d.vol)}</td><td style="font-size:11.5px;max-width:170px;word-break:break-word">${labelTraco(d)}</td><td class="mono">${d.idade}d</td><td class="mono">${fmt(d.resultado)} MPa</td><td style="font-size:12px">${d.obs||'—'}</td><td style="white-space:nowrap">${d.conforme?'<span class="chip ok">conforme</span>':'<span class="chip bad">não conf.</span>'}</td></tr>`;
+  const rowP=c=>`<tr><td>${c.pav}</td><td style="font-size:12px">${c.elem||'—'}</td><td class="mono">${c.nf}</td><td class="mono">${fmt(c.vol)}</td><td>${labelTraco(c)}</td><td class="mono">${c.idade}d</td><td class="mono">${c.rompido&&c.resultado!=null?fmt(c.resultado)+' MPa':'—'}</td><td style="font-size:12px">${c.obs||'—'}</td><td>${c.rompido?'<span class="chip info">parcial</span>':'<span class="chip warn">aguardando</span>'}</td></tr>`;
+  const rowX=x=>`<tr><td>${x.pav}</td><td style="font-size:12px">${x.elem||'—'}</td><td class="mono">${x.nf}</td><td class="mono">${fmt(x.vol)}</td><td>${labelTraco(x)}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td><td style="font-size:12px">${x.obs||'—'}</td></tr>`;
   const volF=(arr,cols)=>{ const m={}; arr.forEach(r=>{ if(!(r.nf in m)) m[r.nf]=r.vol||0; }); const tot=Object.values(m).reduce((s,v)=>s+v,0); const nfs=Object.keys(m).length; return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${nfs} NF · ${arr.length} registro(s)</td></tr>`; };
 
   const obrasOpts=OBRAS.map(o=>`<option value="${o.id}" ${String(o.id)===String(G.obra)?'selected':''}>${o.nome}</option>`).join('');
@@ -359,6 +379,7 @@ function desenharDash(){
       <div class="kpi"><div class="v">${pct}%</div><div class="k">Conformidade (final)</div></div>
       <div class="kpi ${nc?'alert':''}"><div class="v">${nc}</div><div class="k">Não conformes</div></div>
       <div class="kpi"><div class="v">${conf}</div><div class="k">Conformes</div></div>
+      ${kpiVol}
       ${kpi4}
     </div>
     <div class="split">
@@ -373,14 +394,14 @@ function desenharDash(){
       </div>
       <div>
         <div class="card"><div class="ch">Rompimentos finalizados <span class="chip info">28 / 63 d</span>${G.fPav?` · ${G.fPav}`:''}</div>
-          <table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Idade</th><th>Resultado</th><th>Conf.</th></tr></thead>
-          <tbody>${detF.length?detF.map(rowF).join('')+volF(detF,8):'<tr><td colspan="8" class="empty">Sem finais para o filtro.</td></tr>'}</tbody></table></div>
-        <div class="card"><div class="ch">Parciais pendentes <span class="chip mut">3 / 4 / 7 d</span>${G.fPav?` · ${G.fPav}`:''}</div>
-          <table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Idade</th><th>Previsto</th><th>Status</th></tr></thead>
-          <tbody>${detP.length?detP.map(rowP).join('')+volF(detP,8):'<tr><td colspan="8" class="empty">Sem parciais pendentes.</td></tr>'}</tbody></table></div>
+          <div class="tscroll"><table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Idade</th><th>Resultado</th><th>Observação</th><th>Conf.</th></tr></thead>
+          <tbody>${detF.length?detF.map(rowF).join('')+volF(detF,9):'<tr><td colspan="9" class="empty">Sem finais para o filtro.</td></tr>'}</tbody></table></div></div>
+        <div class="card"><div class="ch">Parciais <span class="chip mut">3 / 4 / 7 d</span>${G.fPav?` · ${G.fPav}`:''}</div>
+          <div class="tscroll"><table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Idade</th><th>Resultado</th><th>Observação</th><th>Status</th></tr></thead>
+          <tbody>${detP.length?detP.map(rowP).join('')+volF(detP,9):'<tr><td colspan="9" class="empty">Sem parciais.</td></tr>'}</tbody></table></div></div>
         <div class="card"><div class="ch">Betoneiras recusadas <span class="chip bad">${detX.length}</span>${G.fPav?` · ${G.fPav}`:''}</div>
-          <table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>fck</th><th>Data</th><th>Motivo</th></tr></thead>
-          <tbody>${detX.length?detX.map(rowX).join('')+volF(detX,7):'<tr><td colspan="7" class="empty">Nenhuma recusa.</td></tr>'}</tbody></table></div>
+          <div class="tscroll"><table><thead><tr><th>Pavimento</th><th>Elemento</th><th>NF</th><th>Vol <span class="lc">(m³)</span></th><th>Traço</th><th>Data</th><th>Motivo</th><th>Observação</th></tr></thead>
+          <tbody>${detX.length?detX.map(rowX).join('')+volF(detX,8):'<tr><td colspan="8" class="empty">Nenhuma recusa.</td></tr>'}</tbody></table></div></div>
       </div>
     </div>`;
 }
@@ -446,7 +467,7 @@ function desenharRelatorios(){
       <div class="ch">Relatório de resultados <span class="chip">${nRes} linha(s)</span></div>
       <div class="muted" style="font-size:13px;margin-bottom:12px">Acompanhamento: slump, água, rompimentos e conformidade.</div>
       <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px">Colunas</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'].map(c=>`<span class="chip mut">${c}</span>`).join('')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${['Pavimento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade','Observação'].map(c=>`<span class="chip mut">${c}</span>`).join('')}</div>
       <div style="display:flex;gap:10px"><button class="btn sm" onclick="exportarRelPDF('result')">Gerar PDF</button><button class="btn ghost sm" onclick="exportarRelExcel('result')">Gerar Excel</button></div>
     </div>
     <div class="card">
@@ -473,9 +494,9 @@ function relResultados(){
 function relQuantidades(){
   // betoneiras aceitas (por NF, via rompimentos) + recusadas
   const map={};
-  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,elem:r.elem,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita'}; });
+  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,elem:r.elem,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita',motivo:'',obs:r.obs||''}; });
   const aceitas=Object.values(map);
-  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,elem:x.elem,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada',motivo:x.motivo}));
+  const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,elem:x.elem,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada',motivo:x.motivo,obs:x.obs||''}));
   return aceitas.concat(recus).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
 }
 
@@ -499,8 +520,8 @@ function exportarDashPDF(){
   const accent=[189,93,39]; pdfHeader(doc,'Relatório de Conformidade');
   doc.setTextColor(14,14,14); doc.setFontSize(9);
   doc.text(`Conformidade ${pct}%  ·  ${conf} conforme  ·  ${nc} não conforme`, 12, 27);
-  doc.autoTable({ head:[['Pavimento','Elemento','NF','Vol (m³)','Traço','Idade','Resultado (MPa)','Conformidade']],
-    body:finais.map(d=>[d.pav,d.elem||'—',String(d.nf),fmt(d.vol),labelTraco(d),d.idade+'d',fmt(d.resultado),d.conforme?'Conforme':'Não conforme']),
+  doc.autoTable({ head:[['Pavimento','Elemento','NF','Vol (m³)','Traço','Idade','Resultado (MPa)','Conformidade','Observação']],
+    body:finais.map(d=>[d.pav,d.elem||'—',String(d.nf),fmt(d.vol),labelTraco(d),d.idade+'d',fmt(d.resultado),d.conforme?'Conforme':'Não conforme',d.obs||'—']),
     startY:31, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
     headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
     didParseCell:dt=>{ if(dt.section==='body'&&dt.column.index===7&&dt.cell.raw==='Não conforme'){dt.cell.styles.textColor=[176,42,32];dt.cell.styles.fontStyle='bold';} },
@@ -523,10 +544,16 @@ function exportarRelPDF(tipo){
     const aceitas=todas.filter(r=>r.aceite==='Aceita');
     const recusadas=todas.filter(r=>r.aceite==='Recusada');
     const head=['Pavimento','Elemento','Data','NF','Traço','Volume (m³)'];
-    const bloco=(titulo, arr, startY)=>{
+    const bloco=(titulo, arr, startY, extraCols)=>{
       doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(accent[0],accent[1],accent[2]);
       doc.text(titulo+'  ('+arr.length+')', 12, startY);
-      doc.autoTable({ head:[head], body:arr.map(r=>[r.pav,r.elem||'—',fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)]),
+      const head = ['Pavimento','Elemento','Data','NF','Traço','Volume (m³)'].concat(extraCols||[]);
+      doc.autoTable({ head:[head], body:arr.map(r=>{
+          const base=[r.pav,r.elem||'—',fmtData(r.data),String(r.nf),r.traco,fmt(r.vol)];
+          if(extraCols&&extraCols.includes('Motivo')) base.push(r.motivo||'—');
+          if(extraCols&&extraCols.includes('Observação')) base.push(r.obs||'—');
+          return base;
+        }),
         startY:startY+3, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
         headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
         columnStyles:{5:{halign:'right'}}, margin:{left:12,right:12} });
@@ -539,15 +566,15 @@ function exportarRelPDF(tipo){
         columnStyles:{0:{cellWidth:200}}, margin:{left:12,right:12} });
       return doc.lastAutoTable.finalY;
     };
-    let y=bloco('Betoneiras aceitas', aceitas, 27);
-    bloco('Betoneiras recusadas', recusadas, y+9);
+    let y=bloco('Betoneiras aceitas', aceitas, 27, ['Observação']);
+    bloco('Betoneiras recusadas', recusadas, y+9, ['Motivo','Observação']);
     doc.save('quantidades_'+new Date().toISOString().slice(0,10)+'.pdf');
     return;
   }
   pdfHeader(doc,'Relatório de Resultados');
   const rows=relResultados();
-  const head=['Pavimento','Elemento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade'];
-  doc.autoTable({ head:[head], body:rows.map(d=>[d.pav,d.elem||'—',fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme']),
+  const head=['Pavimento','Elemento','Data','NF','Traço','Slump','Água (L)','Resultado (MPa)','Conformidade','Observação'];
+  doc.autoTable({ head:[head], body:rows.map(d=>[d.pav,d.elem||'—',fmtData(d.data),String(d.nf),labelTraco(d),fmt(d.slumpMed),fmt(d.agua),fmt(d.resultado),d.conforme?'Conforme':'Não conforme',d.obs||'—']),
     startY:27, theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:1.5,lineColor:[234,226,198],lineWidth:0.1},
     headStyles:{fillColor:accent,textColor:[255,255,255],fontStyle:'bold',fontSize:8},
     didParseCell:dt=>{ if(dt.section==='body'&&dt.column.index===8&&dt.cell.raw==='Não conforme'){dt.cell.styles.textColor=[176,42,32];dt.cell.styles.fontStyle='bold';} },
@@ -576,8 +603,8 @@ function exportarRelExcel(tipo){
     const monta=(arr,titulo)=>{
       const ehRec=titulo.indexOf('Recusadas')>=0;
       const linhas=arr.map(r=> ehRec
-        ? {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Motivo:r.motivo||''}
-        : {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol});
+        ? {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Motivo:r.motivo||'',Observação:r.obs||''}
+        : {Pavimento:r.pav,Elemento:r.elem||'',Data:fmtData(r.data),NF:r.nf,Traço:r.traco,'Volume (m³)':r.vol,Observação:r.obs||''});
       linhas.push({});
       somaPorTraco(arr).forEach(t=>linhas.push({Pavimento:'TOTAL',Traço:t.traco,'Volume (m³)':Number(t.vol.toFixed(1))}));
       linhas.push({Pavimento:'TOTAL GERAL','Volume (m³)':Number(arr.reduce((s,r)=>s+r.vol,0).toFixed(1))});
@@ -590,7 +617,7 @@ function exportarRelExcel(tipo){
     XLSX.writeFile(wb,'quantidades_'+new Date().toISOString().slice(0,10)+'.xlsx');
     return;
   }
-  const rows=relResultados().map(d=>({Pavimento:d.pav,Elemento:d.elem||'',Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme'}));
+  const rows=relResultados().map(d=>({Pavimento:d.pav,Elemento:d.elem||'',Data:fmtData(d.data),NF:d.nf,Traço:labelTraco(d),'Slump':d.slumpMed,'Água (L)':d.agua,'Resultado (MPa)':d.resultado,Conformidade:d.conforme?'Conforme':'Não conforme',Observação:d.obs||''}));
   const ws=XLSX.utils.json_to_sheet(rows, {origin:'A3'});
   XLSX.utils.sheet_add_aoa(ws, [['Relatório de Resultados — '+obraNome]], {origin:'A1'});
   XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
