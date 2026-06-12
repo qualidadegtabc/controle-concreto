@@ -240,6 +240,10 @@ async function carregarDados(){
   const recus = await pegarTudo('betoneiras',
     'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome)),motivos_recusa(nome)',
     q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
+  // betoneiras ACEITAS — fonte do volume total (igual ao Orçamento)
+  const aceitasBt = await pegarTudo('betoneiras',
+    'nota_fiscal,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))',
+    q=>q.eq('concretagens.obra_id', obraId).eq('aceita', true));
 
   const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
     .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
@@ -256,8 +260,12 @@ async function carregarDados(){
     .map(b=>{ const c=b.concretagens,p=c.pavimentos;
       return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, motivo:(b.motivos_recusa&&b.motivos_recusa.nome)||'—', obs:b.observacao||'' }; });
 
+  const A = (aceitasBt||[]).filter(b=>b.concretagens)
+    .map(b=>{ const c=b.concretagens,p=c.pavimentos;
+      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, vol:Number(b.volume)||0, data:c.data_concretagem }; });
+
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
-  G.dados={ pavs, R, P, X, datas };
+  G.dados={ pavs, R, P, X, A, datas };
   G.calRef = datas.length ? new Date(datas[0]+'T00:00:00') : new Date();
   if(datas.length){ G.rel.de = datas[datas.length-1]; G.rel.ate = datas[0]; }
   else { G.rel.de=''; G.rel.ate=''; }
@@ -352,9 +360,12 @@ function desenharDash(){
   const kpi4=G.fPav
     ? `<div class="kpi"><div class="v" style="font-size:14px;line-height:1.5">${[...new Set(detF.concat(detP).map(x=>fmtData(x.data)))].filter(Boolean).join('<br>')||'—'}</div><div class="k">Data da concretagem</div></div>`
     : `<div class="kpi"><div class="v">${P.length}</div><div class="k">Parciais pendentes</div></div>`;
-  // volume total (NF distinta) conforme os filtros atuais — soma aceitas: finais + parciais pendentes
+  // volume total (NF distinta) conforme os filtros atuais — de TODAS as betoneiras aceitas (igual Orçamento)
+  let aceitasVol = (G.dados.A||[]);
+  if(G.fData) aceitasVol = aceitasVol.filter(a=>a.data===G.fData);
+  if(G.fPav){ const idsv=new Set((andarMap[G.fPav]||{pavIds:[]}).pavIds); aceitasVol = aceitasVol.filter(a=>idsv.has(a.pavId)); }
   const volMap={};
-  detF.concat(detP).forEach(r=>{ if(!(r.nf in volMap)) volMap[r.nf]=r.vol||0; });
+  aceitasVol.forEach(r=>{ if(!(r.nf in volMap)) volMap[r.nf]=r.vol||0; });
   const volTotal=Object.values(volMap).reduce((s,v)=>s+v,0);
   const nfTotal=Object.keys(volMap).length;
   const kpiVol=`<div class="kpi"><div class="v">${fmt(volTotal)} <span style="font-size:14px;font-weight:600">m³</span></div><div class="k">Concreto total · ${nfTotal} NF</div></div>`;
