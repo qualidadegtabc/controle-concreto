@@ -499,32 +499,51 @@ async function exportarBackup(){
     const romps = await pegarTudo('rompimentos','id,corpo_prova_id,idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,observacao');
 
     const fData = v => v ? String(v).slice(0,10).split('-').reverse().join('/') : '';
-    const linConc = concs.map(c=>({
-      ID:c.id, Data:fData(c.data_concretagem), Obra:c.obras&&c.obras.nome, Pavimento:c.pavimentos&&c.pavimentos.nome,
-      Elemento:c.elementos&&c.elementos.nome, Concreteira:c.concreteiras&&c.concreteiras.nome,
-      Responsável:c.responsavel_nome||c.responsavel, Finalizada:c.finalizada?'sim':'não',
-      Assinada:c.assinado?'sim':'não', 'Resp. Engenharia':c.assinante_nome||'', 'Assinada em':fData(c.assinado_em)
-    }));
-    const linBet = bets.map(b=>({
-      ID:b.id, 'Concretagem (ID)':b.concretagem_id, NF:b.nota_fiscal, Lacre:b.lacre, Chegada:b.hora_chegada,
-      fck:b.fck, 'Slump esp.':b.slump_especificado, Tolerância:b.tolerancia, 'Descrição traço':b.traco_descricao,
-      'Slump medido':b.slump_medido, 'Água (L)':b.agua_adicionada, 'Volume (m³)':b.volume,
-      Aceite:b.aceita?'aceita':'recusada', Motivo:b.motivos_recusa&&b.motivos_recusa.nome, Observação:b.observacao
-    }));
-    const linCp = cps.map(c=>({
-      ID:c.id, 'Betoneira (ID)':c.betoneira_id, 'Nº CP':c.numero, 'Idade prevista (d)':c.idade_prevista,
-      'Data prevista':fData(c.data_prevista), Descartado:c.descartado?'sim':'não'
-    }));
-    const linRomp = romps.map(r=>({
-      ID:r.id, 'CP (ID)':r.corpo_prova_id, 'Idade (d)':r.idade_real, 'Data rompim.':fData(r.data_rompimento),
-      'Prensa (tf)':r.prensa1_tf, 'Resultado (MPa)':r.resultado_mpa, Confirmado:r.confirmado?'sim':'não', Observação:r.observacao
-    }));
+
+    // índices para juntar a cadeia
+    const concById = {}; concs.forEach(c=>concById[c.id]=c);
+    const betById  = {}; bets.forEach(b=>betById[b.id]=b);
+    const rompPorCp = {}; romps.forEach(r=>{ (rompPorCp[r.corpo_prova_id]=rompPorCp[r.corpo_prova_id]||[]).push(r); });
+
+    // UMA aba: uma linha por corpo de prova (com a cadeia toda). CP sem rompimento => colunas de rompimento vazias.
+    const linhas = [];
+    cps.forEach(cp=>{
+      const b = betById[cp.betoneira_id] || {};
+      const c = concById[b.concretagem_id] || {};
+      const base = {
+        // Concretagem
+        'Concretagem (ID)': c.id||'', 'Data concretagem': fData(c.data_concretagem),
+        'Obra': c.obras&&c.obras.nome||'', 'Pavimento': c.pavimentos&&c.pavimentos.nome||'',
+        'Elemento': c.elementos&&c.elementos.nome||'', 'Concreteira': c.concreteiras&&c.concreteiras.nome||'',
+        'Responsável': c.responsavel_nome||c.responsavel||'', 'Finalizada': c.finalizada?'sim':'não',
+        'Assinada': c.assinado?'sim':'não', 'Resp. Engenharia': c.assinante_nome||'',
+        // Betoneira / NF
+        'Betoneira (ID)': b.id||'', 'NF': b.nota_fiscal||'', 'Lacre': b.lacre||'', 'Chegada': b.hora_chegada||'',
+        'fck': b.fck??'', 'Slump esp.': b.slump_especificado??'', 'Tolerância': b.tolerancia??'',
+        'Descrição traço': b.traco_descricao||'', 'Slump medido': b.slump_medido??'', 'Água (L)': b.agua_adicionada??'',
+        'Volume (m³)': b.volume??'', 'Aceite': b.aceita?'aceita':'recusada',
+        'Motivo recusa': b.motivos_recusa&&b.motivos_recusa.nome||'', 'Obs. betoneira': b.observacao||'',
+        // Corpo de prova
+        'Nº CP': cp.numero??'', 'Idade prevista (d)': cp.idade_prevista??'', 'Data prevista': fData(cp.data_prevista),
+        'CP descartado': cp.descartado?'sim':'não'
+      };
+      const rl = rompPorCp[cp.id]||[];
+      if(rl.length===0){
+        linhas.push({ ...base, 'Idade rompim. (d)':'', 'Data rompimento':'', 'Prensa (tf)':'', 'Resultado (MPa)':'', 'Rompimento confirmado':'', 'Obs. rompimento':'' });
+      } else {
+        rl.forEach(r=>{
+          linhas.push({ ...base,
+            'Idade rompim. (d)': r.idade_real??'', 'Data rompimento': fData(r.data_rompimento),
+            'Prensa (tf)': r.prensa1_tf??'', 'Resultado (MPa)': r.resultado_mpa??'',
+            'Rompimento confirmado': r.confirmado?'sim':'não', 'Obs. rompimento': r.observacao||'' });
+        });
+      }
+    });
+    // ordena por NF e nº do CP, para leitura natural
+    linhas.sort((a,b)=> String(a['NF']).localeCompare(String(b['NF']),undefined,{numeric:true}) || (Number(a['Nº CP'])-Number(b['Nº CP'])));
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linConc), 'Concretagens');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linBet),  'Betoneiras');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linCp),   'Corpos de prova');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linRomp), 'Rompimentos');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), 'Controle de concreto');
 
     const hoje = new Date().toISOString().slice(0,10);
     XLSX.writeFile(wb, `backup_gtabc_${hoje}.xlsx`);
