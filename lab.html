@@ -254,6 +254,30 @@ async function confirmarExcluirConc(id){
   }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a exclusão NÃO foi feita.':'Não consegui excluir: '+(e.message||e))); }
 }
 
+// ---- EDITAR NF DE UMA BETONEIRA (admin) ----
+let nfEditId = null;
+function editarNF(btId){
+  if(!perfisUsuario.includes('admin')) return;
+  if(estaOffline()){ alert('Sem internet — não é possível editar agora. Tente quando o sinal voltar.'); return; }
+  nfEditId = btId; pavEditId=null; elemEditId=null; obraEditId=null;
+  desenharResultados();
+}
+function cancelarEditaNF(){ nfEditId=null; desenharResultados(); }
+async function salvarNF(btId){
+  const inp=document.getElementById('inpNF_'+btId);
+  const nova=(inp?inp.value:'').trim();
+  if(!nova){ alert('Informe a nota fiscal.'); return; }
+  if(!confirm(`Corrigir a nota fiscal desta betoneira para "${nova}"?\n\nMuda a NF apenas desta betoneira (todas as idades/CPs dela).`)) return;
+  if(estaOffline()){ alert('Sem internet — a alteração NÃO foi salva.'); return; }
+  try{
+    const { error } = await sb.from('betoneiras').update({ nota_fiscal: nova }).eq('id', btId);
+    if(error) throw error;
+    nfEditId=null;
+    resLinhas = await buscarResultados();
+    desenharResultados();
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar a NF: '+(e.message||e))); }
+}
+
 // ---- EDITAR OBRA (+ pavimento) DE UMA CONCRETAGEM (admin) ----
 let obraEditId = null;
 let obraEditSel = null;   // obra escolhida no dropdown (antes de salvar)
@@ -1108,7 +1132,7 @@ async function buscarResultados(){
         obra:c.obras.nome, pav:c.pavimentos.nome,
         concId:c.id, obraId:c.obra_id, pavId:c.pavimentos.id,
         elemento:(c.elementos&&c.elementos.nome)||'—', elemId:(c.elementos&&c.elementos.id)||null, concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
-        nf:bt.nota_fiscal, lacre:bt.lacre||'—', fck:bt.fck,
+        nf:bt.nota_fiscal, btId:bt.id, lacre:bt.lacre||'—', fck:bt.fck,
         slump:bt.slump_medido, agua:bt.agua_adicionada, volume:bt.volume,
         moldagem:c.data_concretagem, idade, dataRomp, resultado, conf, obs,
         datasRomp: dataRomp?[dataRomp]:[]
@@ -1245,7 +1269,15 @@ function desenharResultados(){
         }
         return `<button onclick="editarElemento(${l.concId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir o elemento (admin)">${l.elemento} ✎</button>`;
       })()}</td><td style="font-size:12px">${l.concreteira}</td>
-      <td class="mono">${l.nf}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
+      <td class="mono">${(() => {
+        if(!perfisUsuario.includes('admin')) return l.nf;
+        if(nfEditId===l.btId){
+          return `<input id="inpNF_${l.btId}" value="${l.nf}" style="width:80px;padding:5px 6px;font-size:12px" inputmode="numeric">`+
+            `<button onclick="salvarNF(${l.btId})" style="background:var(--accent);color:#fff;border:0;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;margin-left:4px">ok</button>`+
+            `<button onclick="cancelarEditaNF()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:2px" title="cancelar">✕</button>`;
+        }
+        return `<button onclick="editarNF(${l.btId})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline dotted" title="Clique para corrigir a NF (admin)">${l.nf} ✎</button>`;
+      })()}</td><td class="mono">${l.lacre}</td><td class="mono">${l.fck||'—'}</td>
       <td class="mono">${n1(l.slump)}</td><td class="mono">${n1(l.agua)}</td><td class="mono">${n1(l.volume)}</td>
       <td class="mono">${fmtData(l.moldagem)}</td><td class="mono">${l.idade!=null?l.idade+'d':'—'}</td>
       <td class="mono">${l.dataRomp?fmtData(l.dataRomp):'—'}</td>
