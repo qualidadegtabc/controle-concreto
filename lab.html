@@ -406,31 +406,51 @@ async function abrirAuditoria(){
   if(!perfisUsuario.includes('admin')) return;
   abaAtual='auditoria';
   const wrap=document.getElementById('wrap');
-  wrap.innerHTML='<div class="officehead"><h2>Auditoria</h2></div><div class="estado">Carregando registros…</div>';
+  wrap.innerHTML=`<div class="officehead"><h2>Auditoria</h2></div>
+    <div class="card" style="max-width:520px;margin:30px auto;text-align:center">
+      <div id="audPctTxt" style="font-weight:700;font-size:15px;margin-bottom:4px">Carregando… 0%</div>
+      <div id="audPctSub" style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Preparando</div>
+      <div style="height:12px;background:#eee4c8;border-radius:99px;overflow:hidden">
+        <div id="audBar" style="height:100%;width:0%;background:var(--accent);border-radius:99px;transition:width .25s ease"></div>
+      </div>
+    </div>`;
+  const setProg=(pct,txt)=>{ const b=document.getElementById('audBar'),t=document.getElementById('audPctTxt'),s=document.getElementById('audPctSub');
+    if(b)b.style.width=Math.round(pct)+'%'; if(t)t.textContent='Carregando… '+Math.round(pct)+'%'; if(s&&txt)s.textContent=txt; };
+  const espera=()=>new Promise(r=>setTimeout(r,20)); // deixa o navegador pintar a barra
   try{
-    // puxa os registros (paginado), mais recentes primeiro
+    // ETAPA 1 (0→40%): registros de auditoria, paginado
+    setProg(2,'Buscando registros de auditoria'); await espera();
     let todos=[], de=0; const passo=1000;
     while(true){
       const { data, error } = await sb.from('auditoria').select('*').order('feito_em',{ascending:false}).range(de,de+passo-1);
       if(error) throw error;
       todos=todos.concat(data||[]);
+      // avança a barra suavemente dentro da faixa 2→40% conforme traz páginas
+      setProg(Math.min(40, 2 + todos.length/250), 'Registros de auditoria: '+todos.length); await espera();
       if(!data||data.length<passo) break;
-      de+=passo; if(de>=10000) break; // teto de segurança
+      de+=passo; if(de>=10000) break;
     }
     AUD.linhas=todos;
-    // ---- mapas para descrição amigável (obra·data / NF) ----
-    try{
-      const [concs, bets, cps] = await Promise.all([
-        pegarTudo('concretagens','id,data_concretagem,obras(nome),pavimentos(nome)'),
-        pegarTudo('betoneiras','id,nota_fiscal,concretagem_id'),
-        pegarTudo('corpos_prova','id,numero,betoneira_id')
-      ]);
-      AUD.mapConc={}; concs.forEach(c=>{ AUD.mapConc[c.id]={ obra:(c.obras&&c.obras.nome)||'', data:c.data_concretagem }; });
-      AUD.mapBet={};  bets.forEach(b=>{ AUD.mapBet[b.id]={ nf:b.nota_fiscal, concId:b.concretagem_id }; });
-      AUD.mapCp={};   cps.forEach(cp=>{ AUD.mapCp[cp.id]={ numero:cp.numero, betId:cp.betoneira_id }; });
-    }catch(_){ AUD.mapConc={}; AUD.mapBet={}; AUD.mapCp={}; }
+    // ETAPA 2 (40→65%): concretagens
+    setProg(45,'Carregando concretagens'); await espera();
+    const concs = await pegarTudo('concretagens','id,data_concretagem,obras(nome),pavimentos(nome)');
+    AUD.mapConc={}; concs.forEach(c=>{ AUD.mapConc[c.id]={ obra:(c.obras&&c.obras.nome)||'', data:c.data_concretagem }; });
+    setProg(65,'Concretagens: '+concs.length); await espera();
+    // ETAPA 3 (65→82%): betoneiras
+    setProg(68,'Carregando betoneiras'); await espera();
+    const bets = await pegarTudo('betoneiras','id,nota_fiscal,concretagem_id');
+    AUD.mapBet={}; bets.forEach(b=>{ AUD.mapBet[b.id]={ nf:b.nota_fiscal, concId:b.concretagem_id }; });
+    setProg(82,'Betoneiras: '+bets.length); await espera();
+    // ETAPA 4 (82→96%): corpos de prova
+    setProg(85,'Carregando corpos de prova'); await espera();
+    const cps = await pegarTudo('corpos_prova','id,numero,betoneira_id');
+    AUD.mapCp={}; cps.forEach(cp=>{ AUD.mapCp[cp.id]={ numero:cp.numero, betId:cp.betoneira_id }; });
+    setProg(96,'Corpos de prova: '+cps.length); await espera();
+    // ETAPA 5 (100%): montar tela
+    setProg(100,'Montando a tela'); await espera();
     desenharAuditoria();
   }catch(e){
+    AUD.mapConc=AUD.mapConc||{}; AUD.mapBet=AUD.mapBet||{}; AUD.mapCp=AUD.mapCp||{};
     wrap.innerHTML='<div class="erro"><b>Não consegui carregar a auditoria.</b><br>'+(e.message||e)+'</div>';
   }
 }
