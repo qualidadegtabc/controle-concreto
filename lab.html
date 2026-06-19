@@ -709,6 +709,46 @@ let rompData = '';          // data de rompimento padrão (ISO)
 let rompGrupos = [];        // duplas a romper
 let rompInputs = {};        // { cpId: tf }
 let rompObs = {};           // { duplaKey: obs }
+
+// ---- RASCUNHO LOCAL DA TELA ROMPER (sobrevive a suspensão/recarga) ----
+const ROMP_DRAFT_KEY = 'gtabc_romper_rascunho_v1';
+let rompTinhaRascunho = false; // sinaliza se reabriu com rascunho (p/ aviso)
+function salvarRascunhoRomper(){
+  try{
+    // guarda só o que tem conteúdo
+    const ins={}; for(const k in rompInputs){ const v=rompInputs[k]; if(v!=null && String(v).trim()!=='') ins[k]=v; }
+    const obs={}; for(const k in rompObs){ const v=rompObs[k]; if(v!=null && String(v).trim()!=='') obs[k]=v; }
+    if(Object.keys(ins).length===0 && Object.keys(obs).length===0){ localStorage.removeItem(ROMP_DRAFT_KEY); return; }
+    localStorage.setItem(ROMP_DRAFT_KEY, JSON.stringify({ ins, obs, em: Date.now() }));
+  }catch(_){ /* armazenamento indisponível: silencioso */ }
+}
+function carregarRascunhoRomper(){
+  rompTinhaRascunho=false;
+  try{
+    const raw=localStorage.getItem(ROMP_DRAFT_KEY); if(!raw) return;
+    const d=JSON.parse(raw)||{};
+    const ins=d.ins||{}, obs=d.obs||{};
+    let achou=false;
+    for(const k in ins){ rompInputs[k]=ins[k]; achou=true; }
+    for(const k in obs){ rompObs[k]=obs[k]; achou=true; }
+    rompTinhaRascunho=achou;
+  }catch(_){ }
+}
+function limparRascunhoRomper(silencioso){
+  try{ localStorage.removeItem(ROMP_DRAFT_KEY); }catch(_){}
+  if(!silencioso){
+    rompInputs={}; rompObs={}; rompTinhaRascunho=false;
+    desenharRomper();
+  }
+}
+// chamado pelos inputs a cada digitação
+function onInputPrensa(cpId, val, duplaKey){
+  rompInputs[cpId]=val; salvarRascunhoRomper(); atualizaPrevia(duplaKey);
+}
+function onInputObsRomp(duplaKey, val){
+  rompObs[duplaKey]=val; salvarRascunhoRomper();
+}
+
 let rompFiltroObra = 'Todas';
 let rompFiltroData = '';     // '' = nenhuma ainda; 'ATRASADOS' ou uma data ISO
 let rompIncluirAtrasados = true; // se a data selecionada também puxa os atrasados anteriores
@@ -815,6 +855,7 @@ async function abaRomper(){
     const dataRomp = (rompFiltroData && rompFiltroData!=='ATRASADOS') ? rompFiltroData : hojeISO();
     rompidosDia = await buscarRompidosDia(dataRomp);
     rompInputs={}; rompObs={}; editRomp={};
+    carregarRascunhoRomper(); // recupera o que foi digitado antes (suspensão/recarga)
     desenharRomper();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
@@ -924,6 +965,19 @@ function desenharRomper(){
       <div style="margin-left:auto;color:var(--muted);font-size:13px;align-self:center">${lista.length} dupla(s) a romper</div>
     </div>`;
 
+  // aviso de rascunho recuperado
+  const nRasc = Object.keys(rompInputs).filter(k=>String(rompInputs[k]||'').trim()!=='').length;
+  if(rompTinhaRascunho && nRasc>0){
+    html += `<div class="card" style="display:flex;align-items:center;gap:12px;border-color:#cdbd8e;background:#fbf6e6;margin-bottom:16px">
+      <div style="font-size:22px">💾</div>
+      <div style="flex:1">
+        <div style="font-weight:700;color:#7a6614">Rascunho recuperado</div>
+        <div style="font-size:13px;color:#7a6614">Recuperamos ${nRasc} prensa(s) que você havia digitado e ainda não tinham sido gravadas. Confira e grave normalmente.</div>
+      </div>
+      <button onclick="if(confirm('Descartar os números digitados que ainda não foram gravados?')) limparRascunhoRomper(false)" style="background:none;border:1px solid #b08a2a;color:#7a6614;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600">Limpar rascunho</button>
+    </div>`;
+  }
+
   // ----- FAIXA DE DESCARTE (63d liberados) -----
   if(dispensaveis.length){
     const nums = dispensaveis.flatMap(d=>d.cps.map(c=>c.numero)).sort((a,b)=>a-b)
@@ -956,7 +1010,7 @@ function desenharRomper(){
           <span class="cpchip">${c.numero}</span>
           <input style="width:80px;padding:9px" inputmode="decimal" placeholder="tf"
             value="${rompInputs[c.id]||''}"
-            oninput="rompInputs[${c.id}]=this.value;atualizaPrevia('${d.duplaKey}')"></div>`).join('');
+            oninput="onInputPrensa(${c.id}, this.value, '${d.duplaKey}')"></div>`).join('');
       const resId = 'res_'+d.duplaKey.replace(/[|:]/g,'_');
       html += `<tr>
         <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
@@ -966,7 +1020,7 @@ function desenharRomper(){
         <td class="mono">${prevTxt}</td>
         <td>${inputs}</td>
         <td id="${resId}"><span class="muted">—</span></td>
-        <td><input style="width:100%;padding:8px" placeholder="opcional" value="${rompObs[d.duplaKey]||''}" oninput="rompObs['${d.duplaKey}']=this.value"></td>
+        <td><input style="width:100%;padding:8px" placeholder="opcional" value="${rompObs[d.duplaKey]||''}" oninput="onInputObsRomp('${d.duplaKey}', this.value)"></td>
       </tr>`;
     });
     html += `</tbody></table></div>
@@ -1072,6 +1126,7 @@ async function confirmarRompimentos(){
   try{
     const { error } = await sb.from('rompimentos').insert(linhas);
     if(error) throw error;
+    limparRascunhoRomper(true); // gravou com sucesso: descarta o rascunho local
     rompFiltroData = hoje; // após romper, vê os rompidos de hoje
     await abaRomper();
     document.getElementById('wrap').insertAdjacentHTML('afterbegin',
