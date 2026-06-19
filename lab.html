@@ -398,7 +398,7 @@ async function salvarPavimento(concId, novoPavId, obraId){
 }
 
 // ---- AUDITORIA (admin) ----
-let AUD = { linhas:[], fUser:'', fAcao:'', fTabela:'', fDe:'', fAte:'' };
+let AUD = { linhas:[], fUser:'', fAcao:'', fTabela:'', fDe:'', fAte:'', mapConc:{}, mapBet:{}, mapCp:{} };
 const ACAO_PT = { INSERT:'Criou', UPDATE:'Editou', DELETE:'Apagou' };
 const TAB_PT = { concretagens:'Concretagem', betoneiras:'Betoneira', corpos_prova:'Corpo de prova', rompimentos:'Rompimento' };
 
@@ -418,6 +418,17 @@ async function abrirAuditoria(){
       de+=passo; if(de>=10000) break; // teto de segurança
     }
     AUD.linhas=todos;
+    // ---- mapas para descrição amigável (obra·data / NF) ----
+    try{
+      const [concs, bets, cps] = await Promise.all([
+        pegarTudo('concretagens','id,data_concretagem,obras(nome),pavimentos(nome)'),
+        pegarTudo('betoneiras','id,nota_fiscal,concretagem_id'),
+        pegarTudo('corpos_prova','id,numero,betoneira_id')
+      ]);
+      AUD.mapConc={}; concs.forEach(c=>{ AUD.mapConc[c.id]={ obra:(c.obras&&c.obras.nome)||'', data:c.data_concretagem }; });
+      AUD.mapBet={};  bets.forEach(b=>{ AUD.mapBet[b.id]={ nf:b.nota_fiscal, concId:b.concretagem_id }; });
+      AUD.mapCp={};   cps.forEach(cp=>{ AUD.mapCp[cp.id]={ numero:cp.numero, betId:cp.betoneira_id }; });
+    }catch(_){ AUD.mapConc={}; AUD.mapBet={}; AUD.mapCp={}; }
     desenharAuditoria();
   }catch(e){
     wrap.innerHTML='<div class="erro"><b>Não consegui carregar a auditoria.</b><br>'+(e.message||e)+'</div>';
@@ -440,6 +451,28 @@ function fmtDataHora(iso){
   const p=n=>String(n).padStart(2,'0');
   return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+// monta a descrição amigável a partir de tabela + registro_id
+function audDescricao(l){
+  const id=l.registro_id;
+  const fd=v=>v?String(v).slice(0,10).split('-').reverse().join('/'):'';
+  if(l.tabela==='concretagens'){
+    const c=(AUD.mapConc||{})[id];
+    if(c) return `Concretagem · ${c.obra}${c.data?' · '+fd(c.data):''}`;
+  } else if(l.tabela==='betoneiras'){
+    const b=(AUD.mapBet||{})[id];
+    if(b){ const c=b.concId?(AUD.mapConc||{})[b.concId]:null;
+      return `Betoneira · NF ${b.nf||'—'}${c?' · '+c.obra:''}`; }
+  } else if(l.tabela==='corpos_prova'){
+    const cp=(AUD.mapCp||{})[id];
+    if(cp){ const b=cp.betId?(AUD.mapBet||{})[cp.betId]:null;
+      return `Corpo de prova · Nº ${cp.numero||'—'}${b?' · NF '+b.nf:''}`; }
+  } else if(l.tabela==='rompimentos'){
+    // registro_id é do rompimento; não temos mapa direto, mas o resumo costuma trazer o CP
+    return l.resumo || 'Rompimento';
+  }
+  // fallback: o resumo original (registros de itens já excluídos, etc.)
+  return l.resumo || '—';
+}
 function desenharAuditoria(){
   const wrap=document.getElementById('wrap');
   const usuarios=[...new Set(AUD.linhas.map(l=>l.user_email).filter(Boolean))].sort();
@@ -451,7 +484,7 @@ function desenharAuditoria(){
     <td style="font-size:12px">${l.user_email||'<span class="muted">sistema/importação</span>'}</td>
     <td>${ACAO_PT[l.acao]||l.acao}</td>
     <td>${TAB_PT[l.tabela]||l.tabela}</td>
-    <td style="font-size:12px">${l.resumo||'—'}</td>
+    <td style="font-size:12px">${audDescricao(l)}</td>
   </tr>`).join('');
 
   wrap.innerHTML=`
@@ -477,7 +510,7 @@ function exportarAuditoria(){
     'Usuário': l.user_email||'sistema/importação',
     'Ação': ACAO_PT[l.acao]||l.acao,
     'Tipo': TAB_PT[l.tabela]||l.tabela,
-    'Detalhe': l.resumo||''
+    'Detalhe': audDescricao(l)
   }));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lista), 'Auditoria');
