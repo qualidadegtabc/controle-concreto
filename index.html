@@ -360,6 +360,15 @@ function validarBetoneira(){
   return true;
 }
 
+// betoneira atual "em branco" = usuário não começou a preencher (sem NF e sem volume)
+function betoneiraVazia(){
+  const c=draft.cur||{};
+  const semNF = !String(c.nf||'').trim();
+  const semVol = !(parseFloat(String(c.volume||'').replace(',','.'))>0);
+  const semObs = !String(c.obs||'').trim();
+  return semNF && semVol && semObs;
+}
+
 const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
 
 // garante que a concretagem existe no banco (cria na 1ª vez)
@@ -421,8 +430,31 @@ function proximaBetoneira(){ gravarESeguir('proxima'); }
 function finalizar(){ gravarESeguir('finalizar'); }
 // pergunta antes de finalizar (evita finalizar por engano)
 function confirmarFinalizar(){
+  const temBetoneiras = (draft.betoneiras&&draft.betoneiras.length>0);
+  // Se a betoneira atual está em branco: finalizar só o que já existe (não obriga preencher)
+  if(betoneiraVazia()){
+    if(!temBetoneiras){ alert('Esta concretagem ainda não tem nenhuma betoneira lançada. Registre ao menos uma betoneira antes de finalizar.'); return; }
+    if(confirm('Finalizar a concretagem?\n\nNenhuma betoneira nova será adicionada — a concretagem será encerrada com as betoneiras já lançadas.')) finalizarSemGravar();
+    return;
+  }
+  // Caso normal: há uma betoneira preenchida → valida, grava e finaliza
   if(!validarBetoneira()) return;
   if(confirm('Tem certeza que deseja finalizar a concretagem?\n\nA betoneira atual será gravada e a concretagem encerrada.')) finalizar();
+}
+// encerra a concretagem existente sem gravar betoneira nova
+async function finalizarSemGravar(){
+  const foot=document.getElementById('foot');
+  const orig = foot.innerHTML;
+  foot.innerHTML = `<button class="bigbtn" disabled>Finalizando…</button>`;
+  try{
+    await garantirConcretagem();
+    await verResumoFinal();
+  }catch(e){
+    foot.innerHTML = orig;
+    const body=document.getElementById('body');
+    body.insertAdjacentHTML('afterbegin','<div class="erro"><b>Não consegui finalizar.</b><br>'+(e&&e.message?e.message:e)+'</div>');
+    window.scrollTo(0,0);
+  }
 }
 
 // telinha de confirmação após gravar a betoneira
@@ -639,7 +671,7 @@ async function continuarConcretagem(concId){
   try{
     const { data:c, error:e1 } = await sb.from('concretagens')
       .select('id,obra_id,pavimento_id,elemento_id,concreteira_id,data_concretagem,obras!inner(nome),pavimentos!inner(nome),'+
-              'betoneiras(id,fck,slump_especificado,tolerancia,traco_descricao)')
+              'betoneiras(id,aceita,fck,slump_especificado,tolerancia,traco_descricao)')
       .eq('id', concId).single();
     if(e1) throw e1;
     // garante que os caches (obras/elementos/concreteiras) estão carregados
@@ -668,7 +700,7 @@ async function continuarConcretagem(concId){
       if(!vistos[k]){ vistos[k]=1; tracos.push({fck:b.fck!=null?String(b.fck):'', slump:b.slump_especificado!=null?String(b.slump_especificado):'16', tol:b.tolerancia!=null?String(b.tolerancia):'3', desc:b.traco_descricao||''}); }
     });
     draft.tracos = tracos.length? tracos : [{fck:'',slump:'16',tol:'3',desc:''}];
-    draft.betoneiras = bts.map(b=>({id:b.id, salva:true}));
+    draft.betoneiras = bts.map(b=>({id:b.id, salva:true, aceita:b.aceita}));
     draft.totalCP = 0;
     draft.cur = novaBetoneira();
     telaBetoneira();
