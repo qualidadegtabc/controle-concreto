@@ -242,7 +242,7 @@ async function carregarDados(){
     q=>q.eq('concretagens.obra_id', obraId).eq('aceita', false));
   // betoneiras ACEITAS — fonte do volume total (igual ao Orçamento)
   const aceitasBt = await pegarTudo('betoneiras',
-    'nota_fiscal,volume,aceita,concretagens!inner(obra_id,data_concretagem,pavimentos!inner(id,nome))',
+    'nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,volume,aceita,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))',
     q=>q.eq('concretagens.obra_id', obraId).eq('aceita', true));
 
   const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
@@ -262,7 +262,7 @@ async function carregarDados(){
 
   const A = (aceitasBt||[]).filter(b=>b.concretagens)
     .map(b=>{ const c=b.concretagens,p=c.pavimentos;
-      return { pavId:p.id, pav:p.nome, nf:b.nota_fiscal, vol:Number(b.volume)||0, data:c.data_concretagem }; });
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao, vol:Number(b.volume)||0, data:c.data_concretagem, obs:b.observacao||'' }; });
 
   const datas=[...new Set([...R,...P,...X].map(r=>r.data).filter(Boolean))].sort().reverse();
   G.dados={ pavs, R, P, X, A, datas };
@@ -503,9 +503,9 @@ function relResultados(){
     .sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
 }
 function relQuantidades(){
-  // betoneiras aceitas (por NF, via rompimentos) + recusadas
+  // betoneiras ACEITAS (uma por NF, da fonte de betoneiras) + recusadas — igual ao Orçamento
   const map={};
-  G.dados.R.filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,elem:r.elem,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita',motivo:'',obs:r.obs||''}; });
+  (G.dados.A||[]).filter(r=>passaFiltroRel(r,false)).forEach(r=>{ if(!map[r.nf]) map[r.nf]={pav:r.pav,elem:r.elem,data:r.data,nf:r.nf,traco:labelTraco(r),vol:r.vol,aceite:'Aceita',motivo:'',obs:r.obs||''}; });
   const aceitas=Object.values(map);
   const recus=G.dados.X.filter(x=>passaFiltroRel(x,false)).map(x=>({pav:x.pav,elem:x.elem,data:x.data,nf:x.nf,traco:labelTraco(x),vol:x.vol,aceite:'Recusada',motivo:x.motivo,obs:x.obs||''}));
   return aceitas.concat(recus).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:String(a.nf).localeCompare(String(b.nf),undefined,{numeric:true}));
