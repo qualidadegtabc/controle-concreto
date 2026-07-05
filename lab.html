@@ -65,6 +65,16 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .b-ok{background:#eaf3ec;color:var(--ok);border:1px solid #bcd2bf}
 .b-bad{background:#fde8e2;color:#8a3220;border:1px solid #e0b09f}
 .b-mut{background:#ecebe4;color:#6f6a5e;border:1px solid #d9d2c0}
+/* semáforo de maturidade — tela Romper (bloco abaixo do número) */
+.sema{display:block;margin-top:6px;font-size:12px;font-weight:700;line-height:1.35;border-radius:8px;padding:6px 9px;max-width:340px}
+.sema-verde{background:#eaf3ec;color:var(--ok);border:1px solid #bcd2bf}
+.sema-amarelo{background:#fdf3df;color:#9a6a05;border:1px solid #f0d79a}
+.sema-vermelho{background:#fbeae8;color:var(--bad);border:1px solid #e6b9b4}
+.sema-sub{display:block;font-weight:500;font-size:11px;margin-top:3px}
+/* semáforo — tela Resultados (badge curto na coluna conformidade) */
+.sema-b-verde{background:#eaf3ec;color:var(--ok);border:1px solid #bcd2bf}
+.sema-b-amarelo{background:#fdf3df;color:#9a6a05;border:1px solid #f0d79a}
+.sema-b-vermelho{background:#fbeae8;color:var(--bad);border:1px solid #e6b9b4}
 .muted{color:var(--muted)}
 .cpchip{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:19px;line-height:1;
   background:var(--accent);color:#fff;border-radius:9px;padding:9px 12px;min-width:54px;text-align:center;
@@ -758,6 +768,66 @@ async function salvarProgramacao(){
 
 // ---- ROMPER ----
 const MPA_PER_TF = 1.2486;
+
+// ---- SEMÁFORO DE MATURIDADE ----
+// curvas carregadas do banco: chave "fck|concreteira|ESTRUTURA" -> {s, f28}
+let CURVAS_MAT = null;
+async function carregarCurvasMaturidade(){
+  if(CURVAS_MAT!==null) return; // já carregou nesta sessão
+  CURVAS_MAT = {};
+  try{
+    const { data, error } = await sb.from('curvas_maturidade')
+      .select('fck,estrutura,s,f28,ativo,concreteiras(nome)').eq('ativo', true);
+    if(error) throw error;
+    (data||[]).forEach(c=>{
+      const nomeConc = c.concreteiras && c.concreteiras.nome;
+      if(!nomeConc) return;
+      CURVAS_MAT[c.fck+'|'+nomeConc+'|'+c.estrutura] = { s:Number(c.s), f28:Number(c.f28) };
+    });
+  }catch(e){ CURVAS_MAT = {}; /* sem curvas: semáforo fica neutro */ }
+}
+// estrutura pelo nome do pavimento
+function estruturaDoPav(pav){
+  return (String(pav||'').trim().toLowerCase()==='infraestrutura') ? 'INFRA' : 'SUPRA';
+}
+// acha a curva para fck+concreteira+estrutura (ou null)
+function curvaPara(fck, concreteira, pav){
+  if(!CURVAS_MAT) return null;
+  return CURVAS_MAT[fck+'|'+concreteira+'|'+estruturaDoPav(pav)] || null;
+}
+// projeta o MPa de uma idade jovem para os 28 dias
+function projeta28(mpaJovem, idade, curva){
+  return mpaJovem / Math.exp(curva.s*(1 - Math.sqrt(28/idade)));
+}
+// retorna o status: {tipo:'verde'|'amarelo'|'vermelho'|'neutro'}
+function statusSemaforo(mpaJovem, idade, fck, concreteira, pav){
+  if(mpaJovem==null || !(idade<28) || !fck) return {tipo:'neutro'};
+  const curva = curvaPara(fck, concreteira, pav);
+  if(!curva) return {tipo:'neutro'};
+  const pct = projeta28(mpaJovem, idade, curva) / fck;
+  if(pct >= 1.15) return {tipo:'verde'};
+  if(pct >= 1.00) return {tipo:'amarelo'};
+  return {tipo:'vermelho'};
+}
+// HTML do semáforo para a tela ROMPER (texto completo, abaixo do número)
+function semaforoRomperHTML(mpaJovem, idade, fck, concreteira, pav){
+  const s = statusSemaforo(mpaJovem, idade, fck, concreteira, pav);
+  if(s.tipo==='neutro') return '';
+  if(s.tipo==='verde') return '<span class="sema sema-verde">Seguindo o esperado</span>';
+  if(s.tipo==='amarelo') return '<span class="sema sema-amarelo">Atenção: comportamento no limite do esperado'+
+    '<span class="sema-sub">Recomenda-se guardar CPs para contraprova aos 63 dias.</span></span>';
+  return '<span class="sema sema-vermelho">Risco identificado: comportamento abaixo do esperado'+
+    '<span class="sema-sub">Guarde CPs para contraprova aos 63 dias.</span></span>';
+}
+// texto curto do semáforo para a tela RESULTADOS (coluna conformidade)
+function semaforoCurtoHTML(mpaJovem, idade, fck, concreteira, pav){
+  const s = statusSemaforo(mpaJovem, idade, fck, concreteira, pav);
+  if(s.tipo==='verde') return '<span class="badge sema-b-verde">Seguindo o esperado</span>';
+  if(s.tipo==='amarelo') return '<span class="badge sema-b-amarelo">Atenção</span>';
+  if(s.tipo==='vermelho') return '<span class="badge sema-b-vermelho">Risco identificado</span>';
+  return null; // neutro
+}
+
 let rompData = '';          // data de rompimento padrão (ISO)
 let rompGrupos = [];        // duplas a romper
 let rompInputs = {};        // { cpId: tf }
@@ -817,7 +887,7 @@ function hojeISO(){ return new Date().toISOString().slice(0,10); }
 // busca TODAS as duplas pendentes (idade programada, não rompidas) — sem limite de data
 async function buscarTodasPendentes(){
   const data = await pegarTudo('corpos_prova',
-    'id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome))),rompimentos(id)',
+    'id,numero,idade_prevista,data_prevista,betoneira_id,betoneiras!inner(id,nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(id,data_concretagem,obras!inner(nome),pavimentos!inner(nome),concreteiras(nome))),rompimentos(id)',
     q=>q.not('idade_prevista','is',null).eq('descartado',false).order('numero',{ascending:true}));
   const semRomp = (data||[]).filter(cp=> asArr(cp.rompimentos).length===0);
   const grp={};
@@ -826,7 +896,7 @@ async function buscarTodasPendentes(){
     const chave=b.id+'|'+cp.idade_prevista+'|'+cp.data_prevista;
     if(!grp[chave]) grp[chave]={ key:chave, betoneiraId:b.id, nf:b.nota_fiscal, fck:b.fck,
       slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
-      obra:c.obras.nome, pav:c.pavimentos.nome, idade:cp.idade_prevista, prevista:cp.data_prevista, moldagem:c.data_concretagem, cps:[] };
+      obra:c.obras.nome, pav:c.pavimentos.nome, concreteira:(c.concreteiras&&c.concreteiras.nome)||'', idade:cp.idade_prevista, prevista:cp.data_prevista, moldagem:c.data_concretagem, cps:[] };
     grp[chave].cps.push({id:cp.id, numero:cp.numero});
   });
   const duplas=[];
@@ -841,7 +911,7 @@ async function buscarTodasPendentes(){
 // rompimentos já confirmados na data escolhida (agrupados por dupla)
 async function buscarRompidosDia(dataISO){
   const { data, error } = await sb.from('rompimentos')
-    .select('id,prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao,corpo_prova_id,corpos_prova!inner(numero,betoneira_id,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(obras!inner(nome),pavimentos!inner(nome))))')
+    .select('id,prensa1_tf,resultado_mpa,idade_real,data_rompimento,observacao,corpo_prova_id,corpos_prova!inner(numero,betoneira_id,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,concretagens!inner(obras!inner(nome),pavimentos!inner(nome),concreteiras(nome))))')
     .eq('data_rompimento', dataISO)
     .order('id',{ascending:true});
   if(error) throw error;
@@ -849,13 +919,13 @@ async function buscarRompidosDia(dataISO){
     const cp=r.corpos_prova, b=cp.betoneiras, c=b.concretagens;
     return { rompId:r.id, cpId:r.corpo_prova_id, numero:cp.numero, betoneiraId:cp.betoneira_id,
       nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
-      obra:c.obras.nome, pav:c.pavimentos.nome,
+      obra:c.obras.nome, pav:c.pavimentos.nome, concreteira:(c.concreteiras&&c.concreteiras.nome)||'',
       idade:r.idade_real, tf:r.prensa1_tf, mpa:r.resultado_mpa, obs:r.observacao };
   });
   const grp={};
   itens.forEach(it=>{
     const chave=it.betoneiraId+'|'+it.idade;
-    if(!grp[chave]) grp[chave]={ chave, nf:it.nf, fck:it.fck, slump:it.slump, tol:it.tol, desc:it.desc, obra:it.obra, pav:it.pav, idade:it.idade, itens:[] };
+    if(!grp[chave]) grp[chave]={ chave, nf:it.nf, fck:it.fck, slump:it.slump, tol:it.tol, desc:it.desc, obra:it.obra, pav:it.pav, concreteira:it.concreteira, idade:it.idade, itens:[] };
     grp[chave].itens.push(it);
   });
   const duplas=[];
@@ -890,6 +960,7 @@ async function abaRomper(){
   const wrap=document.getElementById('wrap');
   wrap.innerHTML = `<div class="officehead"><h2>Romper</h2><p>Lance as prensas (tf) de cada corpo de prova. O resultado em MPa e a conformidade são calculados automaticamente.</p></div><div class="estado">Buscando corpos de prova…</div>`;
   try{
+    await carregarCurvasMaturidade();
     pendentesTodas = await buscarTodasPendentes();
     okBt28 = await buscarBetoneiras28Conforme();
     // CPs de 63d ainda pendentes cuja betoneira já tem 28d conforme → liberados para descarte
@@ -952,19 +1023,21 @@ function resultadoDupla(d){
   return Math.max(...vals);
 }
 function ehFinal(idade){ return idade>=28; }
-function vereditoHTML(mpa, idade, fck){
+function vereditoHTML(mpa, idade, fck, d){
   if(mpa==null) return '<span class="muted">—</span>';
   let badge='';
   if(ehFinal(idade)){ const ok=mpa>=(fck||0); badge=` <span class="badge ${ok?'b-ok':'b-bad'}">${ok?'conforme':'não conf.'}</span>`; }
   else badge=` <span class="badge b-mut">parcial (${idade}d)</span>`;
-  return `<b class="mono">${mpa.toFixed(1)} MPa</b>${badge}`;
+  let sema='';
+  if(!ehFinal(idade) && d) sema = semaforoRomperHTML(mpa, idade, fck, d.concreteira, d.pav);
+  return `<b class="mono">${mpa.toFixed(1)} MPa</b>${badge}${sema}`;
 }
 function idadeAtual(d){ return d.idade; }
 function atualizaPrevia(duplaKey){
   const d = rompGrupos.find(x=>x.duplaKey===duplaKey);
   if(!d) return;
   const el = document.getElementById('res_'+duplaKey.replace(/[|:]/g,'_'));
-  if(el) el.innerHTML = vereditoHTML(resultadoDupla(d), d.idade, d.fck);
+  if(el) el.innerHTML = vereditoHTML(resultadoDupla(d), d.idade, d.fck, d);
 }
 // reprograma a idade: salva no banco (idade_prevista + data_prevista) após confirmação
 async function reprogramarIdade(duplaKey, novaIdade, selectEl){
@@ -1114,7 +1187,7 @@ function desenharRomper(){
           <td>${d.obra}<div style="color:var(--muted);font-size:12px">${d.pav}</div></td>
           <td class="mono">${d.nf}</td><td class="mono">fck ${d.fck||'—'}</td><td class="mono">${d.idade}d</td>
           <td>${prensasTxt}</td>
-          <td>${vereditoHTML(d.resultado, d.idade, d.fck)}</td>
+          <td>${vereditoHTML(d.resultado, d.idade, d.fck, d)}</td>
           <td style="font-size:13px">${d.itens[0].obs||'<span class="muted">—</span>'}</td>
           <td><button class="btn ghost" style="padding:8px 16px;font-size:13px" onclick="abrirEdicaoDupla('${d.duplaId}')">Editar</button></td>
         </tr>`;
@@ -1275,6 +1348,7 @@ async function abaResultados(){
   const wrap=document.getElementById('wrap');
   wrap.innerHTML = `<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla de corpos de prova. Os filtros são cumulativos.</p></div><div class="estado">Carregando resultados…</div>`;
   try{
+    await carregarCurvasMaturidade();
     resLinhas = await buscarResultados();
     resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' };
     desenharResultados();
@@ -1321,6 +1395,14 @@ function badgeConf(s){
   if(s==='parcial') return '<span class="badge b-mut">parcial</span>';
   if(s==='a_programar') return '<span class="badge b-mut">a programar</span>';
   return '<span class="badge b-mut">aguardando</span>';
+}
+// coluna conformidade na tela Resultados: para CPs jovens (parcial) mostra o semáforo curto, se houver curva
+function conformidadeCelula(l){
+  if(l.conf==='parcial' && l.resultado!=null && l.idade!=null && l.idade<28){
+    const sema = semaforoCurtoHTML(Number(l.resultado), l.idade, l.fck, l.concreteira, l.pav);
+    if(sema) return sema;
+  }
+  return badgeConf(l.conf);
 }
 function n1(v){ return v==null?'—':Number(v).toFixed(1); }
 
@@ -1409,7 +1491,7 @@ function desenharResultados(){
       <td class="mono">${fmtData(l.moldagem)}</td><td class="mono">${l.idade!=null?l.idade+'d':'—'}</td>
       <td class="mono">${l.dataRomp?fmtData(l.dataRomp):'—'}</td>
       <td class="mono"><b>${n1(l.resultado)}</b></td>
-      <td>${badgeConf(l.conf)}</td>
+      <td>${conformidadeCelula(l)}</td>
       <td style="font-size:12px">${l.obs||'<span class="muted">—</span>'}</td>
     </tr>`;
   });
