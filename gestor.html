@@ -60,6 +60,9 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .chip.warn{background:#fcf0d8;color:#8a6a12;border-color:#e6cf95}
 .chip.mut{background:#ecebe4;color:#6f6a5e;border-color:#d9d2c0}
 .chip.info{background:var(--accent-soft);color:var(--accent-ink);border-color:#e3c3a6}
+.chip.s-verde{background:#eaf3ec;color:var(--ok);border-color:#bcd2bf}
+.chip.s-amarelo{background:#fdf3df;color:#9a6a05;border-color:#f0d79a}
+.chip.s-vermelho{background:#fbeae8;color:var(--bad);border-color:#e6b9b4}
 .muted{color:var(--muted)}
 
 .filters{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
@@ -106,6 +109,31 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 .login-box label{display:block;font-size:13px;font-weight:700;margin:0 0 6px}
 .login-box input{width:100%;margin-bottom:14px;min-height:50px}
 .login-box .btn{width:100%}
+/* ===== página curvas de maturidade ===== */
+.cm-layout{display:flex;gap:0;align-items:flex-start}
+.cm-sum{position:sticky;top:0;width:240px;flex-shrink:0;background:#fff;border-right:1px solid var(--line);padding:22px 0;align-self:stretch;min-height:70vh}
+.cm-sum h4{margin:0 18px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.cm-sum a{display:block;padding:9px 18px;font-size:13.5px;color:var(--ink);text-decoration:none;border-left:3px solid transparent;cursor:pointer;line-height:1.35}
+.cm-sum a:hover{background:var(--accent-soft)}
+.cm-sum a.on{border-left-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
+.cm-cont{flex:1;padding:8px 40px 80px;max-width:900px}
+.cm-cont section{padding-top:26px}
+.cm-cont h2{color:var(--accent);font-size:22px;margin:8px 0 6px}
+.cm-cont p{font-size:14.5px;line-height:1.65;color:#2b2b2b;margin:0 0 12px}
+.cm-formula{background:#F5EAD8;border:1px solid var(--accent);border-radius:10px;padding:14px 16px;font-family:"JetBrains Mono",monospace;font-size:14px;text-align:center;margin:14px 0;color:#2b2b2b}
+.cm-destaque{background:#eef6f0;border-left:4px solid var(--ok);border-radius:8px;padding:12px 16px;font-size:13.5px;line-height:1.55;margin:14px 0}
+.cm-aviso{background:#fdf3df;border-left:4px solid var(--warn);border-radius:8px;padding:12px 16px;font-size:13.5px;line-height:1.55;margin:14px 0}
+.cm-risco{background:#fbeae8;border-left:4px solid var(--bad);border-radius:8px;padding:12px 16px;font-size:13.5px;line-height:1.55;margin:14px 0}
+.cm-eqt{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+.cm-eqt th{background:var(--accent);color:#fff;padding:9px 10px;text-align:left;font-size:12.5px}
+.cm-eqt td{border:1px solid var(--line);padding:8px 10px}
+.cm-eqt tr:nth-child(even) td{background:var(--paper)}
+.cm-eqf{font-family:"JetBrains Mono",monospace;font-size:12px}
+.cm-gc{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px}
+.cm-gc button{border:1.5px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.cm-gc button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.cm-gwrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+.cm-dot{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:4px}
 </style>
 </head>
 <body>
@@ -121,6 +149,43 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const root = document.getElementById('root');
 const MPA_PER_TF = 1.2486;
+
+// ---- SEMÁFORO DE MATURIDADE ----
+let CURVAS_MAT = null;
+async function carregarCurvasMaturidade(){
+  if(CURVAS_MAT!==null) return;
+  CURVAS_MAT = {};
+  try{
+    const { data, error } = await sb.from('curvas_maturidade')
+      .select('fck,estrutura,s,f28,ativo,concreteiras(nome)').eq('ativo', true);
+    if(error) throw error;
+    (data||[]).forEach(c=>{
+      const nomeConc = c.concreteiras && c.concreteiras.nome;
+      if(!nomeConc) return;
+      CURVAS_MAT[c.fck+'|'+nomeConc+'|'+c.estrutura] = { s:Number(c.s), f28:Number(c.f28), r2:(c.r2!=null?Number(c.r2):null) };
+    });
+  }catch(e){ CURVAS_MAT = {}; }
+}
+function estruturaDoPav(pav){ return (String(pav||'').trim().toLowerCase()==='infraestrutura') ? 'INFRA' : 'SUPRA'; }
+function curvaPara(fck, concreteira, pav){ if(!CURVAS_MAT) return null; return CURVAS_MAT[fck+'|'+concreteira+'|'+estruturaDoPav(pav)] || null; }
+function projeta28(mpaJovem, idade, curva){ return mpaJovem / Math.exp(curva.s*(1 - Math.sqrt(28/idade))); }
+function statusSemaforo(mpaJovem, idade, fck, concreteira, pav){
+  if(mpaJovem==null || !(idade<28) || !fck) return 'neutro';
+  const curva = curvaPara(fck, concreteira, pav);
+  if(!curva) return 'neutro';
+  const pct = projeta28(mpaJovem, idade, curva) / fck;
+  if(pct >= 1.15) return 'verde';
+  if(pct >= 1.00) return 'amarelo';
+  return 'vermelho';
+}
+// chip curto para a tabela de parciais (mesma escrita da tela Resultados do lab)
+function semaforoChipParcial(mpaJovem, idade, fck, concreteira, pav){
+  const s = statusSemaforo(mpaJovem, idade, fck, concreteira, pav);
+  if(s==='verde') return '<span class="chip s-verde">Seguindo o esperado</span>';
+  if(s==='amarelo') return '<span class="chip s-amarelo">Atenção</span>';
+  if(s==='vermelho') return '<span class="chip s-vermelho">Risco identificado</span>';
+  return '<span class="chip info">parcial</span>'; // sem curva
+}
 
 let userEmail='';
 let perfisUsuario=[];
@@ -179,14 +244,16 @@ function casca(){
     <div class="tabs">
       <button class="tab ${G.aba==='dash'?'on':''}" onclick="irAba('dash')">Dashboard</button>
       <button class="tab ${G.aba==='rel'?'on':''}" onclick="irAba('rel')">Relatórios</button>
+      <button class="tab ${G.aba==='curvas'?'on':''}" onclick="irAba('curvas')">Curvas de maturidade</button>
     </div>
     <div class="wrap" id="wrap"></div>`;
 }
-function irAba(a){ G.aba=a; render(); }
+function irAba(a){ G.aba=a; if(a==='curvas'){ carregarCurvasMaturidade().then(()=>render()); } else render(); }
 function render(){
   const prevElev=document.querySelector('.elevscroll'); const elevTop=prevElev?prevElev.scrollTop:null;
   root.innerHTML = casca();
   if(G.aba==='dash') desenharDash();
+  else if(G.aba==='curvas') desenharCurvas();
   else desenharRelatorios();
   const sel=document.getElementById('selObra');
   if(sel) sel.value = String(G.obra);
@@ -225,6 +292,7 @@ async function iniciar(){
 
 async function carregarDados(){
   G.dados=null;
+  await carregarCurvasMaturidade();
   const obraId=G.obra;
   G.obraNome=(OBRAS.find(o=>String(o.id)===String(obraId))||{}).nome||'';
   const { data:pavs, error:e0 } = await sb.from('pavimentos').select('id,nome,ordem').eq('obra_id',obraId).order('ordem');
@@ -232,7 +300,7 @@ async function carregarDados(){
 
   // Filtra a OBRA já na consulta (via relação), trazendo só o que é desta obra.
   const romps = await pegarTudo('rompimentos',
-    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))))',
+    'idade_real,data_rompimento,prensa1_tf,resultado_mpa,confirmado,corpos_prova!inner(numero,betoneiras!inner(nota_fiscal,fck,slump_especificado,tolerancia,traco_descricao,slump_medido,agua_adicionada,volume,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome),concreteiras(nome))))',
     q=>q.eq('corpos_prova.betoneiras.concretagens.obra_id', obraId));
   const cpsPend = await pegarTudo('corpos_prova',
     'numero,idade_prevista,data_prevista,descartado,betoneiras!inner(nota_fiscal,fck,volume,observacao,concretagens!inner(obra_id,data_concretagem,elementos(nome),pavimentos!inner(id,nome))),rompimentos(id)',
@@ -248,7 +316,7 @@ async function carregarDados(){
   const R = (romps||[]).filter(r=>r.confirmado && r.corpos_prova&&r.corpos_prova.betoneiras&&r.corpos_prova.betoneiras.concretagens)
     .map(r=>{ const b=r.corpos_prova.betoneiras,c=b.concretagens,p=c.pavimentos;
       const mpa=r.resultado_mpa!=null?Number(r.resultado_mpa):(r.prensa1_tf!=null?r.prensa1_tf*MPA_PER_TF:null);
-      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
+      return { pavId:p.id, pav:p.nome, elem:(c.elementos&&c.elementos.nome)||'', nf:b.nota_fiscal, fck:b.fck, concreteira:(c.concreteiras&&c.concreteiras.nome)||'', slump:b.slump_especificado, tol:b.tolerancia, desc:b.traco_descricao,
                slumpMed:b.slump_medido, agua:b.agua_adicionada, vol:Number(b.volume)||0, idade:r.idade_real, data:c.data_concretagem, dataRomp:r.data_rompimento, mpa, obs:b.observacao||'' }; });
   const nfComFinal=new Set(R.filter(r=>ehFinal(r.idade)).map(r=>r.nf));
   const semRomp = cp => !cp.rompimentos || (Array.isArray(cp.rompimentos)?cp.rompimentos.length===0:!cp.rompimentos);
@@ -327,7 +395,7 @@ function desenharDash(){
   const parcRompidos=(() => {
     const map={};
     R.filter(r=>r.idade!=null && r.idade<28).forEach(r=>{ const k=r.nf+'|'+r.idade;
-      if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,obs:r.obs||'',mpas:[] };
+      if(!map[k]) map[k]={ pavId:r.pavId,pav:r.pav,elem:r.elem,nf:r.nf,fck:r.fck,concreteira:r.concreteira,slump:r.slump,tol:r.tol,desc:r.desc,vol:r.vol,idade:r.idade,data:r.data,obs:r.obs||'',mpas:[] };
       map[k].mpas.push(r.mpa); });
     return Object.values(map).map(d=>{ const m=Math.max(...d.mpas.filter(v=>v!=null),-Infinity);
       return { ...d, resultado:isFinite(m)?m:null, rompido:true }; });
@@ -371,7 +439,7 @@ function desenharDash(){
   const kpiVol=`<div class="kpi"><div class="v">${fmt(volTotal)} <span style="font-size:14px;font-weight:600">m³</span></div><div class="k">Concreto total · ${nfTotal} NF</div></div>`;
 
   const rowF=d=>`<tr><td>${d.pav}</td><td style="font-size:12px">${d.elem||'—'}</td><td class="mono">${d.nf}</td><td class="mono">${fmt(d.vol)}</td><td style="font-size:11.5px;max-width:170px;word-break:break-word">${labelTraco(d)}</td><td class="mono">${d.idade}d</td><td class="mono">${fmt(d.resultado)} MPa</td><td style="font-size:12px">${d.obs||'—'}</td><td style="white-space:nowrap">${d.conforme?'<span class="chip ok">conforme</span>':'<span class="chip bad">não conf.</span>'}</td></tr>`;
-  const rowP=c=>`<tr><td>${c.pav}</td><td style="font-size:12px">${c.elem||'—'}</td><td class="mono">${c.nf}</td><td class="mono">${fmt(c.vol)}</td><td>${labelTraco(c)}</td><td class="mono">${c.idade}d</td><td class="mono">${c.rompido&&c.resultado!=null?fmt(c.resultado)+' MPa':'—'}</td><td style="font-size:12px">${c.obs||'—'}</td><td>${c.rompido?'<span class="chip info">parcial</span>':'<span class="chip warn">aguardando</span>'}</td></tr>`;
+  const rowP=c=>`<tr><td>${c.pav}</td><td style="font-size:12px">${c.elem||'—'}</td><td class="mono">${c.nf}</td><td class="mono">${fmt(c.vol)}</td><td>${labelTraco(c)}</td><td class="mono">${c.idade}d</td><td class="mono">${c.rompido&&c.resultado!=null?fmt(c.resultado)+' MPa':'—'}</td><td style="font-size:12px">${c.obs||'—'}</td><td>${c.rompido?(c.resultado!=null?semaforoChipParcial(c.resultado,c.idade,c.fck,c.concreteira,c.pav):'<span class="chip info">parcial</span>'):'<span class="chip warn">aguardando</span>'}</td></tr>`;
   const rowX=x=>`<tr><td>${x.pav}</td><td style="font-size:12px">${x.elem||'—'}</td><td class="mono">${x.nf}</td><td class="mono">${fmt(x.vol)}</td><td>${labelTraco(x)}</td><td class="mono">${fmtData(x.data)}</td><td>${x.motivo}</td><td style="font-size:12px">${x.obs||'—'}</td></tr>`;
   const volF=(arr,cols)=>{ const m={}; arr.forEach(r=>{ if(!(r.nf in m)) m[r.nf]=r.vol||0; }); const tot=Object.values(m).reduce((s,v)=>s+v,0); const nfs=Object.keys(m).length; return `<tr class="sumrow"><td colspan="${cols}">Volume total <b>${fmt(tot)} m³</b> · ${nfs} NF · ${arr.length} registro(s)</td></tr>`; };
 
@@ -633,6 +701,133 @@ function exportarRelExcel(tipo){
   XLSX.utils.sheet_add_aoa(ws, [['Relatório de Resultados — '+obraNome]], {origin:'A1'});
   XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
   XLSX.writeFile(wb,'resultados_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ============ PÁGINA CURVAS DE MATURIDADE ============
+const CM_TOPICOS=[
+  {id:'cm1', nome:'O que são as curvas'},
+  {id:'cm2', nome:'A norma e a fórmula'},
+  {id:'cm3', nome:'De onde vêm os dados'},
+  {id:'cm4', nome:'Como lemos os resultados'},
+  {id:'cm5', nome:'As equações'},
+  {id:'cm6', nome:'Os gráficos'},
+  {id:'cm7', nome:'Como usar no dia a dia'},
+];
+// lista de curvas para o gráfico, montada a partir de CURVAS_MAT (banco)
+function cmListaCurvas(){
+  const cores={'40|Concrebrás|INFRA':'#3F945A','40|Concrebrás|SUPRA':'#BD5D27','40|Max Mohr|SUPRA':'#2f6fb0','50|Max Mohr|SUPRA':'#7a4bbd','50|Concrebrás|SUPRA':'#5a5a5a'};
+  const nomes={'40|Concrebrás|INFRA':'fck 40 · Concrebrás · Infra','40|Concrebrás|SUPRA':'fck 40 · Concrebrás · Supra','40|Max Mohr|SUPRA':'fck 40 · Max Mohr · Supra','50|Max Mohr|SUPRA':'fck 50 · Max Mohr · Supra','50|Concrebrás|SUPRA':'fck 50 · Concrebrás · Supra'};
+  const ordem=['40|Concrebrás|INFRA','40|Concrebrás|SUPRA','40|Max Mohr|SUPRA','50|Max Mohr|SUPRA','50|Concrebrás|SUPRA'];
+  const lista=[];
+  ordem.forEach(k=>{ if(CURVAS_MAT&&CURVAS_MAT[k]) lista.push({chave:k, nome:nomes[k]||k, cor:cores[k]||'#888', fck:parseInt(k)}); });
+  // inclui eventuais curvas extras não previstas na ordem
+  if(CURVAS_MAT) Object.keys(CURVAS_MAT).forEach(k=>{ if(!ordem.includes(k)) lista.push({chave:k, nome:k.replace(/\|/g,' · '), cor:'#888', fck:parseInt(k)}); });
+  return lista;
+}
+function fCurva(t,c){ return c.f28*Math.exp(c.s*(1-Math.sqrt(28/t))); }
+let CM_visiveis=[];
+
+function desenharCurvas(){
+  const wrap=document.getElementById('wrap');
+  const lista=cmListaCurvas();
+  const sumLinks=CM_TOPICOS.map((t,i)=>`<a id="cmlnk_${t.id}" class="${i===0?'on':''}" onclick="cmScroll('${t.id}')">${i+1}. ${t.nome}</a>`).join('');
+  const eqRows=lista.map(c=>{const cv=CURVAS_MAT[c.chave];
+    return `<tr><td>${c.nome}</td><td class="mono">${cv.s.toFixed(3)}</td><td class="mono">${cv.f28.toFixed(1)}</td><td class="mono">${cv.r2!=null?cv.r2.toFixed(2):'—'}</td><td class="cm-eqf">f(t)=${cv.f28.toFixed(1)}·exp{${cv.s.toFixed(3)}·[1−√(28/t)]}</td></tr>`;
+  }).join('');
+  const botoes=lista.map((c,i)=>`<button class="on" data-cmi="${i}" onclick="cmToggle(${i})"><span class="cm-dot" style="background:${c.cor}"></span>${c.nome}</button>`).join('');
+  wrap.innerHTML=`<div class="cm-layout">
+    <nav class="cm-sum"><h4>Sumário</h4>${sumLinks}</nav>
+    <div class="cm-cont" id="cmCont">
+      <section id="cm1"><h2>Curvas de maturidade do concreto</h2>
+        <p>As curvas de maturidade descrevem a evolução da resistência à compressão do concreto em função da idade. O ganho de resistência é acentuado nas primeiras idades e desacelera progressivamente à medida que a hidratação do cimento avança, tendendo à estabilização em torno dos 28 dias, idade de referência para o fck.</p>
+        <p>A partir da curva calibrada de cada concreto, um rompimento em idade jovem (3, 5 ou 7 dias) permite projetar a resistência esperada aos 28 dias e avaliar, com antecedência, se o material tende a atingir o fck especificado. Desvios do comportamento previsto podem ser identificados precocemente, viabilizando ações corretivas ou a guarda de corpos de prova para contraprova.</p>
+        <div class="cm-destaque">Esta é a base do <b>semáforo</b> do laboratório e do dashboard: a curva funciona como referência para classificar cada resultado em idade jovem quanto à sua trajetória em direção ao fck.</div>
+      </section>
+      <section id="cm2"><h2>A norma e a fórmula</h2>
+        <p>A modelagem segue a <b>ABNT NBR 6118</b>, que trata da evolução da resistência do concreto com a idade. A norma estabelece que, havendo ensaios do próprio concreto, esses dados devem ser utilizados para a determinação da curva, adotando a formulação do CEB-FIP:</p>
+        <div class="cm-formula">f(t) = f<sub>28</sub> · exp{ s · [ 1 − √(28 / t) ] }</div>
+        <p>Onde <b>t</b> é a idade em dias, <b>f<sub>28</sub></b> é a resistência aos 28 dias e <b>s</b> é o coeficiente que representa a cinética de endurecimento do cimento. Cada concreto possui seu próprio <b>s</b> e <b>f<sub>28</sub></b>, calibrados a partir dos resultados reais de ensaio.</p>
+      </section>
+      <section id="cm3"><h2>De onde vêm os dados</h2>
+        <p>As curvas são construídas a partir do histórico de rompimentos do Controle Tecnológico. Alguns critérios orientam a formação da amostra:</p>
+        <p>• <b>Maior da dupla:</b> cada exemplar possui dois corpos de prova por idade; adota-se o maior resultado, conforme a prática da norma.<br>
+        • <b>Infra e supraestrutura separadas:</b> elementos de fundação e de elevação apresentam comportamentos distintos, recebendo curvas próprias.<br>
+        • <b>Por fck e concreteira:</b> cada combinação de resistência e fornecedor gera uma curva específica.</p>
+      </section>
+      <section id="cm4"><h2>Como lemos os resultados</h2>
+        <p>Antes da construção de cada curva, os dados passam por um tratamento criterioso: removem-se apenas resultados comprovadamente inconsistentes (valores fisicamente impossíveis ou erros de registro), preservando a variação natural do concreto.</p>
+        <p>A curva é <b>ancorada nas idades de 7 e 28 dias</b>, as de maior massa de dados e, portanto, maior confiabilidade estatística. Com isso, a curva passa exatamente pela média real dessas duas idades. O coeficiente resulta de forma fechada:</p>
+        <div class="cm-formula">s = − ln ( f<sub>7,méd</sub> / f<sub>28,méd</sub> )</div>
+      </section>
+      <section id="cm5"><h2>As equações</h2>
+        <p>Cada uma das curvas calibradas, com seu coeficiente <b>s</b>, a resistência de referência aos 28 dias (<b>f<sub>28</sub></b>) e o R² (medida de quão bem a curva representa os dados):</p>
+        <table class="cm-eqt"><thead><tr><th>Concreto</th><th>s</th><th>f28</th><th>R²</th><th>Equação</th></tr></thead><tbody>${eqRows||'<tr><td colspan="5">Nenhuma curva cadastrada.</td></tr>'}</tbody></table>
+      </section>
+      <section id="cm6"><h2>Os gráficos</h2>
+        <p>Passe o cursor sobre o gráfico para visualizar a resistência estimada em cada idade. Utilize os botões para exibir ou ocultar cada concreto.</p>
+        <div class="cm-gc">${botoes}</div>
+        <div class="cm-gwrap"><svg id="cmGraf" style="width:100%;height:auto;display:block" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet"></svg></div>
+      </section>
+      <section id="cm7"><h2>Como usar no dia a dia</h2>
+        <p>Ao romper um corpo de prova em idade jovem, o sistema projeta o resultado para os 28 dias utilizando a curva do concreto e compara com o fck. O <b>semáforo</b> apresenta:</p>
+        <div class="cm-destaque"><b>Seguindo o esperado:</b> projeção ≥ 115% do fck. Comportamento saudável.</div>
+        <div class="cm-aviso"><b>Atenção: comportamento no limite do esperado:</b> projeção entre 100% e 115% do fck. Recomenda-se guardar corpos de prova para contraprova aos 63 dias.</div>
+        <div class="cm-risco"><b>Risco identificado: comportamento abaixo do esperado:</b> projeção abaixo de 100% do fck. Guarde corpos de prova para contraprova aos 63 dias.</div>
+        <p style="font-size:13px;color:var(--muted)">O semáforo constitui apoio à decisão. O ensaio de conformidade aos 28 e 63 dias permanece sendo sempre realizado.</p>
+      </section>
+    </div></div>`;
+  CM_visiveis=lista.map(()=>true);
+  cmDesenhaGrafico();
+  // scroll-spy
+  const cont=document.getElementById('cmCont');
+  if(cont){
+    cont.closest('#wrap');
+    const secs=CM_TOPICOS.map(t=>document.getElementById(t.id));
+    const onScroll=()=>{ let atual=CM_TOPICOS[0].id; secs.forEach(s=>{ if(s&&s.getBoundingClientRect().top<180) atual=s.id; });
+      CM_TOPICOS.forEach(t=>{ const l=document.getElementById('cmlnk_'+t.id); if(l) l.classList.toggle('on',t.id===atual); }); };
+    window.addEventListener('scroll', onScroll, {passive:true});
+  }
+}
+function cmScroll(id){ const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'smooth'}); }
+function cmToggle(i){ CM_visiveis[i]=!CM_visiveis[i]; const b=document.querySelector(`[data-cmi="${i}"]`); if(b) b.classList.toggle('on',CM_visiveis[i]); cmDesenhaGrafico(); }
+function cmDesenhaGrafico(){
+  const svg=document.getElementById('cmGraf'); if(!svg) return;
+  const lista=cmListaCurvas();
+  const W=720,H=420,mL=48,mR=16,mT=16,mB=40;
+  const x0=mL,x1=W-mR,y0=H-mB,y1=mT;
+  const tMax=70,yMin=0,yMax=75;
+  const X=t=>x0+(t/tMax)*(x1-x0);
+  const Y=v=>y0-((v-yMin)/(yMax-yMin))*(y0-y1);
+  let s='';
+  s+=`<defs><clipPath id="cmClip"><rect x="${x0}" y="${y1}" width="${x1-x0}" height="${y0-y1}"/></clipPath></defs>`;
+  for(let t=0;t<=70;t+=7){ s+=`<line x1="${X(t)}" y1="${y0}" x2="${X(t)}" y2="${y1}" stroke="#EAE2C6" stroke-width="1"/>`;
+    s+=`<text x="${X(t)}" y="${y0+16}" font-size="10" fill="#7A746A" text-anchor="middle" font-family="JetBrains Mono">${t}</text>`; }
+  for(let v=yMin;v<=yMax;v+=15){ s+=`<line x1="${x0}" y1="${Y(v)}" x2="${x1}" y2="${Y(v)}" stroke="#EAE2C6" stroke-width="1"/>`;
+    s+=`<text x="${x0-6}" y="${Y(v)+3}" font-size="10" fill="#7A746A" text-anchor="end" font-family="JetBrains Mono">${v}</text>`; }
+  s+=`<text x="${(x0+x1)/2}" y="${H-4}" font-size="11" fill="#2b2b2b" text-anchor="middle">Idade (dias)</text>`;
+  s+=`<text x="14" y="${(y0+y1)/2}" font-size="11" fill="#2b2b2b" text-anchor="middle" transform="rotate(-90 14 ${(y0+y1)/2})">Resistência (MPa)</text>`;
+  lista.forEach((c,i)=>{ if(!CM_visiveis[i])return; const cv=CURVAS_MAT[c.chave]; let d='';
+    for(let t=1;t<=tMax;t+=0.5){ const yy=fCurva(t,cv); d+=(t===1?'M':'L')+X(t)+' '+Y(yy)+' '; }
+    s+=`<path d="${d}" fill="none" stroke="${c.cor}" stroke-width="2.4" clip-path="url(#cmClip)"/>`;
+    [7,28].forEach(t=>{ const yy=fCurva(t,cv); s+=`<circle cx="${X(t)}" cy="${Y(yy)}" r="3.5" fill="#fff" stroke="${c.cor}" stroke-width="2"/>`; });
+  });
+  s+=`<rect id="cmHoverArea" x="${x0}" y="${y1}" width="${x1-x0}" height="${y0-y1}" fill="transparent"/>`;
+  s+=`<line id="cmHoverLine" x1="0" y1="${y1}" x2="0" y2="${y0}" stroke="#8E4319" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>`;
+  s+=`<g id="cmHoverPts"></g>`;
+  svg.innerHTML=s;
+  const area=svg.querySelector('#cmHoverArea'), line=svg.querySelector('#cmHoverLine'), pts=svg.querySelector('#cmHoverPts');
+  const tip=document.getElementById('cmTip')||(()=>{const d=document.createElement('div');d.id='cmTip';d.style.cssText='position:fixed;pointer-events:none;background:#2b2b2b;color:#fff;font-size:11.5px;padding:7px 9px;border-radius:8px;display:none;z-index:99;line-height:1.5;font-family:Montserrat';document.body.appendChild(d);return d;})();
+  area.addEventListener('mousemove', ev=>{
+    const rect=svg.getBoundingClientRect(); const scale=W/rect.width; const px=(ev.clientX-rect.left)*scale;
+    let t=Math.max(1,Math.min(tMax, ((px-x0)/(x1-x0))*tMax)); t=Math.round(t);
+    line.setAttribute('x1',X(t)); line.setAttribute('x2',X(t)); line.style.display='';
+    let ph=''; let linhas=`<b>${t} dias</b>`;
+    lista.forEach((c,i)=>{ if(!CM_visiveis[i])return; const cv=CURVAS_MAT[c.chave]; const yy=fCurva(t,cv);
+      ph+=`<circle cx="${X(t)}" cy="${Y(yy)}" r="4" fill="${c.cor}" stroke="#fff" stroke-width="1.5"/>`;
+      linhas+=`<br><span style="color:${c.cor}">●</span> ${c.nome}: <b>${yy.toFixed(1)} MPa</b>`; });
+    pts.innerHTML=ph; tip.innerHTML=linhas; tip.style.display=''; tip.style.left=(ev.clientX+14)+'px'; tip.style.top=(ev.clientY+10)+'px';
+  });
+  area.addEventListener('mouseleave', ()=>{ line.style.display='none'; pts.innerHTML=''; const t=document.getElementById('cmTip'); if(t)t.style.display='none'; });
 }
 
 (async function(){
