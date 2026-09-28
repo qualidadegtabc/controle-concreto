@@ -181,6 +181,7 @@ function irAba(a){ abaAtual=a; render(); }
 
 // ---- GERENCIAR CONCRETAGENS (admin) — excluir com cascata ----
 let CONCS = { linhas:[], fObra:'', confirmId:null };
+let concDataEditId = null;   // concId com a data em edição (admin)
 async function abrirConcretagens(){
   if(!perfisUsuario.includes('admin')) return;
   abaAtual='concretagens';
@@ -217,7 +218,17 @@ function desenharConcretagens(){
          <button onclick="cancelarExcluirConc()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:6px">cancelar</button>`
       : `<button onclick="pedirExcluirConc(${c.id})" style="background:none;border:1px solid var(--bad);color:var(--bad);border-radius:7px;padding:7px 12px;cursor:pointer">Excluir</button>`;
     return `<tr ${emConf?'style="background:#fdecea"':''}>
-      <td>${fmtData(c.data)}</td>
+      <td>${(() => {
+        if(!perfisUsuario.includes('admin')) return fmtData(c.data);
+        if(concDataEditId===c.id){
+          return `<div style="display:flex;flex-direction:column;gap:5px">
+            <input type="date" id="inpDataConc_${c.id}" value="${(c.data||'').slice(0,10)}" style="padding:5px 7px;font-size:12px">
+            <div><button onclick="salvarDataConc(${c.id})" style="background:var(--accent);color:#fff;border:0;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer">Salvar</button>
+            <button onclick="cancelarEditaDataConc()" style="background:none;border:0;color:var(--muted);cursor:pointer;margin-left:4px">✕</button></div>
+          </div>`;
+        }
+        return `<button onclick="editarDataConc(${c.id})" style="background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:0;text-align:left;text-decoration:underline dotted" title="Clique para corrigir a data (admin)">${fmtData(c.data)} ✎</button>`;
+      })()}</td>
       <td>${c.obra}<div style="color:var(--muted);font-size:12px">${c.pav}</div></td>
       <td style="font-size:12px">${c.elem}</td>
       <td class="mono" style="text-align:center">${c.nbet}</td>
@@ -262,6 +273,49 @@ async function confirmarExcluirConc(id){
     CONCS.confirmId=null;
     await abrirConcretagens(); // recarrega a lista
   }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a exclusão NÃO foi feita.':'Não consegui excluir: '+(e.message||e))); }
+}
+
+// ---- EDITAR DATA DE UMA CONCRETAGEM (admin) ----
+// Troca a data_concretagem e, se os CPs tiverem data_prevista, desloca todas pelo mesmo delta.
+function editarDataConc(id){
+  if(!perfisUsuario.includes('admin')) return;
+  concDataEditId = id;
+  desenharConcretagens();
+}
+function cancelarEditaDataConc(){ concDataEditId=null; desenharConcretagens(); }
+async function salvarDataConc(id){
+  if(!perfisUsuario.includes('admin')) return;
+  const c = CONCS.linhas.find(x=>x.id===id); if(!c) return;
+  const inp = document.getElementById('inpDataConc_'+id);
+  const nova = inp ? inp.value : '';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(nova||'')){ alert('Escolha uma data válida.'); return; }
+  const antiga = (c.data||'').slice(0,10);
+  if(nova===antiga){ concDataEditId=null; desenharConcretagens(); return; }
+  const delta = Math.round((new Date(nova+'T00:00:00') - new Date(antiga+'T00:00:00'))/86400000);
+  if(estaOffline()){ alert('Sem internet — a alteração NÃO foi salva.'); return; }
+  try{
+    // busca os CPs desta concretagem que tenham data prevista (para deslocar junto)
+    const { data:bts, error:e0 } = await sb.from('betoneiras')
+      .select('id,corpos_prova(id,data_prevista)').eq('concretagem_id', id);
+    if(e0) throw e0;
+    let cpsComPrev = [];
+    (bts||[]).forEach(b=>asArr(b.corpos_prova).forEach(cp=>{ if(cp.data_prevista) cpsComPrev.push(cp); }));
+    const aviso = cpsComPrev.length
+      ? `\n\nAs ${cpsComPrev.length} data(s) prevista(s) de rompimento serão deslocadas em ${delta>0?'+':''}${delta} dia(s) para acompanhar.`
+      : '';
+    if(!confirm(`Alterar a data desta concretagem de ${fmtData(antiga)} para ${fmtData(nova)}?${aviso}`)) return;
+    // 1) atualiza a data da concretagem
+    const { error:e1 } = await sb.from('concretagens').update({ data_concretagem: nova }).eq('id', id);
+    if(e1) throw e1;
+    // 2) desloca cada data prevista pelo mesmo delta
+    for(const cp of cpsComPrev){
+      const novaPrev = addDiasISO((cp.data_prevista||'').slice(0,10), delta);
+      const { error:e2 } = await sb.from('corpos_prova').update({ data_prevista: novaPrev }).eq('id', cp.id);
+      if(e2) throw e2;
+    }
+    concDataEditId=null;
+    await abrirConcretagens(); // recarrega a lista
+  }catch(e){ alert((ehErroDeRede(e)?'Sem internet — a alteração NÃO foi salva.':'Não consegui alterar: '+(e.message||e))); }
 }
 
 // ---- EDITAR NF DE UMA BETONEIRA (admin) ----
