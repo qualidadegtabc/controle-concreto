@@ -1340,7 +1340,7 @@ async function descartarLiberados(){
 
 // ================= ABA RESULTADOS =================
 let resLinhas = [];   // uma linha por DUPLA
-let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' };
+let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
 
 async function buscarResultados(){
   // CPs (não descartados) com betoneira+concretagem+elemento+concreteira e rompimentos
@@ -1383,6 +1383,7 @@ async function buscarResultados(){
       else conf='parcial';
       linhas.push({
         cpLabel: par.map(p=>String(p.numero).padStart(3,'0')).join('·'),
+        cpNums: par.map(p=>Number(p.numero)),
         obra:c.obras.nome, pav:c.pavimentos.nome,
         concId:c.id, obraId:c.obra_id, pavId:c.pavimentos.id,
         elemento:(c.elementos&&c.elementos.nome)||'—', elemId:(c.elementos&&c.elementos.id)||null, concreteira:(c.concreteiras&&c.concreteiras.nome)||'—',
@@ -1404,7 +1405,7 @@ async function abaResultados(){
   try{
     await carregarCurvasMaturidade();
     resLinhas = await buscarResultados();
-    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' };
+    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
     desenharResultados();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
@@ -1419,8 +1420,42 @@ function resFiltrar(exceto){
     if(exceto!=='conf' && resFiltros.conf && l.conf!==resFiltros.conf) return false;
     if(exceto!=='idade' && resFiltros.idade && String(l.idade)!==String(resFiltros.idade)) return false;
     if(exceto!=='dataRomp' && resFiltros.dataRomp && !l.datasRomp.includes(resFiltros.dataRomp)) return false;
+    if(exceto!=='cp' && resFiltros.cp){
+      const alvo = numerosCpBusca(resFiltros.cp);
+      if(alvo.length && !l.cpNums.some(n=>alvo.includes(n))) return false;
+    }
     return true;
   });
+}
+// ---- BUSCA POR Nº DO CP ----
+// aceita "8333", "08333" ou a dupla inteira ("8333·8334", "8333 8334", "8333-8334")
+function numerosCpBusca(txt){
+  return (String(txt||'').match(/\d+/g)||[]).map(Number);
+}
+let resCpTimer = null, resCpFocar = false;
+function campoBuscaCp(){
+  const v = String(resFiltros.cp||'').replace(/"/g,'&quot;');
+  return `<div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Nº do CP</label>
+    <input type="search" id="inpBuscaCp" value="${v}" placeholder="ex.: 8333" inputmode="numeric" autocomplete="off"
+      style="width:150px" oninput="onInputBuscaCp(this.value)"
+      onkeydown="if(event.key==='Enter'){ clearTimeout(resCpTimer); aplicarBuscaCp(this.value); }"></div>`;
+}
+function onInputBuscaCp(v){
+  clearTimeout(resCpTimer);
+  resCpTimer = setTimeout(()=>aplicarBuscaCp(v), 350);
+}
+function aplicarBuscaCp(v){
+  if(String(v||'')===String(resFiltros.cp||'')) return;
+  resFiltros.cp = v;
+  resCpFocar = true;
+  desenharResultados();
+}
+// depois de redesenhar, devolve o cursor ao campo para continuar digitando
+function restaurarFocoBuscaCp(){
+  if(!resCpFocar) return;
+  resCpFocar = false;
+  const el = document.getElementById('inpBuscaCp');
+  if(el){ el.focus(); const n=el.value.length; try{ el.setSelectionRange(n,n); }catch(_){} }
 }
 function opcoesDe(campo, exceto){
   const base = resFiltrar(exceto);
@@ -1471,6 +1506,7 @@ function desenharResultados(){
     selFiltro('conf','Conformidade', ['conforme','nao','parcial','aguardando','a_programar'], v=>({conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[v])),
     selFiltro('idade','Idade', opcoesDe('idade','idade'), v=>v+' dias'),
     selFiltro('dataRomp','Data rompim.', opcoesDe('dataRomp','dataRomp'), fmtData),
+    campoBuscaCp(),
   ].join('');
 
   let html=`<div class="officehead"><h2>Resultados</h2><p>Histórico detalhado por dupla. Os filtros são cumulativos — cada um refina o anterior.</p></div>
@@ -1481,7 +1517,7 @@ function desenharResultados(){
       <span style="color:var(--muted);font-size:13px">${lista.length} dupla(s)</span>
     </div>`;
 
-  if(!lista.length){ wrap.innerHTML=html+'<div class="estado">Nenhum resultado para os filtros selecionados.</div>'; return; }
+  if(!lista.length){ wrap.innerHTML=html+'<div class="estado">Nenhum resultado para os filtros selecionados.</div>'; restaurarFocoBuscaCp(); return; }
 
   html += `<div style="width:100vw;margin-left:calc(50% - 50vw);padding:0 26px;box-sizing:border-box">
     <div class="card" style="padding:0;overflow:hidden">
@@ -1551,8 +1587,9 @@ function desenharResultados(){
   });
   html += `</tbody></table></div></div>`;
   wrap.innerHTML = html;
+  restaurarFocoBuscaCp();
 }
-function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'' }; desenharResultados(); }
+function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' }; desenharResultados(); }
 
 function nomeConf(s){ return {conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[s]||s; }
 function resumoFiltrosTxt(){
@@ -1564,6 +1601,7 @@ function resumoFiltrosTxt(){
   if(resFiltros.conf) p.push('Conformidade: '+nomeConf(resFiltros.conf));
   if(resFiltros.idade) p.push('Idade: '+resFiltros.idade+' dias');
   if(resFiltros.dataRomp) p.push('Rompimento: '+fmtData(resFiltros.dataRomp));
+  if(numerosCpBusca(resFiltros.cp).length) p.push('CP: '+numerosCpBusca(resFiltros.cp).join(', '));
   return p.length ? p.join('   ·   ') : 'Todos os registros (sem filtro)';
 }
 function exportarResultadosPDF(){
