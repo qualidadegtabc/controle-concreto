@@ -1340,7 +1340,7 @@ async function descartarLiberados(){
 
 // ================= ABA RESULTADOS =================
 let resLinhas = [];   // uma linha por DUPLA
-let resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
+let resFiltros = { obra:'', pav:'', elem:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
 
 async function buscarResultados(){
   // CPs (não descartados) com betoneira+concretagem+elemento+concreteira e rompimentos
@@ -1405,7 +1405,7 @@ async function abaResultados(){
   try{
     await carregarCurvasMaturidade();
     resLinhas = await buscarResultados();
-    resFiltros = { obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
+    resFiltros = { obra:'', pav:'', elem:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' };
     desenharResultados();
   }catch(e){ wrap.innerHTML='<div class="erro"><b>Não consegui carregar.</b><br>'+(e.message||e)+'</div>'; }
 }
@@ -1415,6 +1415,7 @@ function resFiltrar(exceto){
   return resLinhas.filter(l=>{
     if(exceto!=='obra' && resFiltros.obra && l.obra!==resFiltros.obra) return false;
     if(exceto!=='pav' && resFiltros.pav && l.pav!==resFiltros.pav) return false;
+    if(exceto!=='elem' && resFiltros.elem && l.elemento!==resFiltros.elem) return false;
     if(exceto!=='dataConc' && resFiltros.dataConc && l.moldagem!==resFiltros.dataConc) return false;
     if(exceto!=='nf' && resFiltros.nf && String(l.nf)!==String(resFiltros.nf)) return false;
     if(exceto!=='conf' && resFiltros.conf && l.conf!==resFiltros.conf) return false;
@@ -1459,7 +1460,7 @@ function restaurarFocoBuscaCp(){
 }
 function opcoesDe(campo, exceto){
   const base = resFiltrar(exceto);
-  const mapa={obra:'obra',pav:'pav',dataConc:'moldagem',nf:'nf',idade:'idade'};
+  const mapa={obra:'obra',pav:'pav',elem:'elemento',dataConc:'moldagem',nf:'nf',idade:'idade'};
   let vals;
   if(campo==='dataRomp'){ vals=[...new Set(base.flatMap(l=>l.datasRomp))]; }
   else { const k=mapa[campo]; vals=[...new Set(base.map(l=>l[k]).filter(v=>v!=null&&v!==''))]; }
@@ -1501,6 +1502,7 @@ function desenharResultados(){
   const filtros = [
     selFiltro('obra','Obra', opcoesDe('obra','obra')),
     selFiltro('pav','Pavimento', opcoesDe('pav','pav')),
+    selFiltro('elem','Elemento', opcoesDe('elem','elem'), v=>v==='—'?'Sem elemento':v),
     selFiltro('dataConc','Concretagem', opcoesDe('dataConc','dataConc'), fmtData),
     selFiltro('nf','NF', opcoesDe('nf','nf')),
     selFiltro('conf','Conformidade', ['conforme','nao','parcial','aguardando','a_programar'], v=>({conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[v])),
@@ -1589,13 +1591,14 @@ function desenharResultados(){
   wrap.innerHTML = html;
   restaurarFocoBuscaCp();
 }
-function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' }; desenharResultados(); }
+function limparFiltrosRes(){ resFiltros={ obra:'', pav:'', elem:'', dataConc:'', nf:'', conf:'', idade:'', dataRomp:'', cp:'' }; desenharResultados(); }
 
 function nomeConf(s){ return {conforme:'Conforme',nao:'Não conforme',parcial:'Parcial',aguardando:'Aguardando',a_programar:'A programar'}[s]||s; }
 function resumoFiltrosTxt(){
   const p=[];
   if(resFiltros.obra) p.push('Obra: '+resFiltros.obra);
   if(resFiltros.pav) p.push('Pavimento: '+resFiltros.pav);
+  if(resFiltros.elem) p.push('Elemento: '+(resFiltros.elem==='—'?'Sem elemento':resFiltros.elem));
   if(resFiltros.dataConc) p.push('Concretagem: '+fmtData(resFiltros.dataConc));
   if(resFiltros.nf) p.push('NF: '+resFiltros.nf);
   if(resFiltros.conf) p.push('Conformidade: '+nomeConf(resFiltros.conf));
